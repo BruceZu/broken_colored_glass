@@ -9,5 +9,5 @@ Includes
 
 - Install Mongo replset (with arbiter or not)
 - Enable `mongod.log` rotation with Linux logrotate 
-- Backup and restore to point of time with `mongodump` and `mongorestore`
+- Backup and restore to point in time with `mongodump` and `mongorestore`
 
