@@ -1,0 +1,234 @@
+#!/bin/bash
+# set -x
+# By far these operations are idempotent. Tue Jul 10 12:20:26 PDT 2018
+. ./common.sh
+. ./common_replsets_nodes_ip.sh
+readonly SHELL_F="backup.sh"
+readonly JS_F="backup_script.js"
+readonly EC2_BACKUP_F_PATH="~/backuP"
+# Crontab. it is not same as that in ubuntu where its location is
+# $ sudo ls -lha  /var/spool/cron/crontabs/<user>
+# and it's content can't be updated by command.
+readonly EC2_CRON_P="/var/spool/cron"
+
+function transfer_file_local_replset_member() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_member=$4
+  local local_file=$5
+  local target_file=$6
+  cat ${local_file} | ssh ${hop_user}@${sshhop} "cat - | ssh  ${user}@${replset_member} \"cat - > ${target_file}\""
+}
+
+#############################################################
+# Backup: deploy
+# Globals:
+#   FULL_BP
+#   SHELL_F
+#   JS_F
+#   EC2_BACKUP_F_PATH
+#   EC2_CRON_P
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+# Returns:
+#   None
+#############################################################
+function deploy_backup() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_member=$4
+  local replset_name=$5
+
+  local connect="ssh ${hop_user}@${sshhop} ssh -o StrictHostKeyChecking=no ${user}@${replset_member} 2>/dev/null"
+
+  # Prepare the directory and MODE
+  local command_create_path="mkdir -p ~/backup 
+  && sudo mkdir -p ${FULL_BP}/week_{1,2,3,4,5,6,7} 
+  && sudo chmod -R 777 ${FULL_BP} 
+  && ls -lha ${FULL_BP}"
+
+  run "${command_create_path}" "${connect}" 0
+
+  # Copy script to remote
+  local local_d="$(pwd)"
+  transfer_file_local_replset_member ${hop_user} ${sshhop} ${user} ${replset_member} "${local_d}/${JS_F}" "${EC2_BACKUP_F_PATH}/${JS_F}"
+  transfer_file_local_replset_member ${hop_user} ${sshhop} ${user} ${replset_member} "${local_d}/${SHELL_F}" "${EC2_BACKUP_F_PATH}/${SHELL_F}"
+
+  local command_chmod='sudo chmod -R 777 ~/backup && ls -alh ~/backup'
+  run "${command_chmod}" "${connect}" 0
+
+  # Cron job
+
+  local command_cron="touch /tmp/${user} 
+  && sudo echo \"0 3 * * *  /home/ec2-user/backup/backup.sh\" >/tmp/${user} 
+  && sudo cp /tmp/${user} ${EC2_CRON_P} 
+  && sudo cat ${EC2_CRON_P}/${user} 
+  && sudo ls -alh ${EC2_CRON_P}"
+  run "${command_cron}" "${connect}" 0
+}
+
+#############################################################
+# Backup: monitor
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+# Returns:
+#   None
+#############################################################
+function verify_backup() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_member=$4
+  local replset_name=$5
+  local connect="ssh ${hop_user}@${sshhop} ssh -o StrictHostKeyChecking=no ${user}@${replset_member} 2>/dev/null"
+
+  # Note: grep returns a different exit code
+  # if it found something return zero,
+  # if it hasn't found anything return no-zero.
+  grep_expected_code_of_no_result=1
+  for week in week_{1,2,3,4,5,6,7}; do
+    echo "Verify $week"
+    local command="grep -Ei 'WARN|ERROR' ${FULL_BP}/$week/backup.log"
+    # set -x
+    run "${command}" "${connect}" ${grep_expected_code_of_no_result}
+
+    # set +x
+  done
+}
+
+#############################################################
+# Backup:  maintenance
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+# Returns:
+#   None
+#############################################################
+function maintenance_backup_on_2_sec() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_member=$4
+  local replset_name=$5
+  local connect="ssh ${hop_user}@${sshhop} ssh -o StrictHostKeyChecking=no ${user}@${replset_member} 2>/dev/null"
+  # For test
+  local db=sth
+  for week in week_{1,2,3,4,5,6,7}; do
+    echo "Remove the $db backup if found"
+    local command="find ${FULL_BP}/$week -type d -name $db -exec rm -rf {} +"
+    # set -x
+    run "${command}" "${connect}" 0
+    # set +x
+  done
+}
+
+#############################################################
+# Backup: deploy, monitor and maintenance
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+#   task "-v" or "-d" or "-m"
+# Returns:
+#   None
+#############################################################
+function do_business() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_member=$4
+  local replset_name=$5
+  local task="$6"
+
+  # Business
+  case "$task" in
+  v)
+    verify_backup "${hop_user}" "${sshhop}" "${user}" "${replset_member}" "${replset_name}"
+    ;;
+  d)
+    deploy_backup "${hop_user}" "${sshhop}" "${user}" "${replset_member}" "${replset_name}"
+    ;;
+  m)
+    maintenance_backup_on_2_sec "${hop_user}" "${sshhop}" "${user}" "${replset_member}" "${replset_name}"
+    ;;
+  *)
+    echo "Invalide parameter"
+    exit 1
+    ;;
+  esac
+}
+
+function printUsage() {
+  cat <<EOF
+Usage: $0 [option]
+Option:
+           -v | --verify       Verify
+           -d | --deploy       Deploy
+           -h | --help         Help
+                               Help
+           -m | --maintenance  Maintenance
+EOF
+}
+
+main() {
+  if [[ $# == 0 ]]; then
+    printUsage
+    exit 0
+  else
+    local task
+    case "$1" in
+    -v | --verify)
+      echo "Verify start ..."
+      task="v"
+      ;;
+    -h | --help)
+      printUsage
+      exit 0
+      ;;
+    -d | --deploy)
+      echo "Deploy start ..."
+      task="d"
+      ;;
+    -m | --maintenance)
+      echo "Maintenance start ..."
+      task="m"
+      ;;
+    *)
+      echo "Invalide parameter"
+      printUsage
+      exit 1
+      ;;
+    esac
+  fi
+
+  if [ $(ssh-add -l | sed '/^$/d' | wc -l) -lt 3 ]; then
+    local mess="$(ssh-add -l) \nTry: ssh-add -l"
+    echo -e "$mess" >&2
+    echo -e "$mess" | mail -s "==SSH key is not ready" ${mail_receiver}
+    exit 1
+  fi
+  for_2_sec_per_replst "$task"
+}
+
+main "$@"

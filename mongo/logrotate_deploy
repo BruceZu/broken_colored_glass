@@ -1,0 +1,40 @@
+#!/bin/bash
+source ./common.sh
+#########################################
+# Apply business to each replset node
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+# Returns:
+#   None
+#########################################
+function do_business() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  local replset_name="$5"
+  echo "Enalbe logrotation  ${node} of ${replset_name}"
+
+  declare -r f=logrotate-apply-assum-5G-space.sh
+  if [[ ! -e ./$f ]]; then
+    echo "The batch file $f is not exist" >&2
+    return 1
+  fi
+  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
+  ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node "bash /tmp/$f"
+}
+
+function main() {
+  env_check
+  for_each_replst_node "$@"
+  sleep 2
+  each_replsets_primary_and_status
+}
+
+main "$@"

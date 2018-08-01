@@ -1,0 +1,161 @@
+#!/bin/bash
+. ./common.sh
+
+readonly TMP_OPLOG_BP="${FULL_BP}/tmp_backup_oplog"
+readonly OPLOG_BF="${TMP_OPLOG_BP}/local/oplog.rs.bson"
+readonly OPLOG_FIR_EVENT_FLAG="oplog first event time:  "
+readonly OPLOG_LAST_EVENT_FLAG="oplog last event time:   "
+readonly MONGO_V="MongoDB shell version v"
+declare -ir GREP_NO_FOUND_CODE=1
+declare -ir SUCCESS_CODE=0
+
+function abstract_func() {
+  local t=$1
+  local flag=$2
+  local t_seconds=$3
+
+  local t=$(echo "$t" | grep "${flag}")
+  echo "${t}"
+  t=${t:${#flag}}
+  eval $t_seconds=$(date -d"${t}" +%s)
+}
+
+function printUsage() {
+  cat <<EOF
+Usage: $0 <ssh hop user name> <ssh hop IP> <EC2 user name> <EC2 IP> <week number> <expected point in time>
+ Valid week number: 1-7
+ Valid expected point in time value: timestamp form
+ e.g.: 
+  ./restore "ubuntu" "52.53.189.82" "ec2-user" "172.31.1.166" 4 "1531365300"
+EOF
+}
+
+main() {
+  local hop_user=$1
+  local sshhop=$2
+  local user=$3
+  local replset_secondary=$4
+  declare -ir week=$5
+  local roll_to_ts=$6
+  local local_ws=$7
+  if [[ $# == 0 ]]; then
+    printUsage
+    exit 1
+  fi
+
+  # local work space, default is "."
+  local_ws=${local_ws:-$(pwd)}
+  local pop="Args:
+  hop user: ${hop_user}
+  sshhop: ${sshhop}
+  user: ${user}
+  replset_secondary: ${replset_secondary}
+  week: ${week}
+  expected point in time: ${roll_to_ts}
+  local workspace: ${local_ws}"
+  confirm_or_exit "$pop"
+
+  local connect="ssh ${hop_user}@${sshhop} ssh -o StrictHostKeyChecking=no ${user}@${replset_secondary} 2>/dev/null"
+  # Get the BSON_full_back_up_timestamp
+  local c_get_backup_t="grep -Ei \"WARN|ERROR\" ${FULL_BP}/week_${week}/backup.log"
+  run "${c_get_backup_t}" "${connect}" ${GREP_NO_FOUND_CODE}
+  stop $? "Check if the full backup is valid"
+
+  c_get_backup_t=" grep \"2\*\" ${FULL_BP}/week_${week}/backup.log"
+  local m="Get the full backup time "
+  run "${c_get_backup_t}" "${connect}" ${SUCCESS_CODE} result
+  if [[ $? == 1 ]]; then
+    echo -e "\nFailed: $m" >&2
+    exit 1
+  else
+    local backup_t=${result:${#result}-24}
+    local backup_ts=${backup_t:10:10}
+    echo -e "\nDone: $m :\n $backup_t  \n $(date -d@${backup_ts}) \n $(date -ud@${backup_ts})"
+  fi
+
+  # Valid the selected full backup and roll_to time
+  local c_print_valid_opl_scope="mongo -eval \"
+  rs.slaveOk(); 
+  db=db.getSiblingDB('local'); 
+  rs.printReplicationInfo()\""
+  run "${c_print_valid_opl_scope}" "${connect}" ${SUCCESS_CODE} result
+  stop $? "Print valid oplog scope"
+
+  local mongo_v=$(echo -e "$result" | grep "$MONGO_V_FLG" | awk -Fv '{print $3}')
+  # trim space
+  mongo_v="$(echo $mongo_v | xargs)"
+
+  abstract_func "$result" "${OPLOG_FIR_EVENT_FLAG}" opl_first_e_ts
+  echo " $opl_first_e_ts"
+  abstract_func "$result" "${OPLOG_LAST_EVENT_FLAG}" opl_last_e_ts
+  echo " $opl_last_e_ts"
+
+  m="The selected full backup and rolled_to time"
+  if (($opl_first_e_ts <= $backup_ts)) &&
+    (($backup_ts <= $roll_to_ts)) &&
+    (($roll_to_ts <= $opl_last_e_ts)); then
+    echo -e "\nVaid: $m"
+  else
+    echo -e "\nInvalid: $m " >&2
+    echo -e "$opl_first_e_ts\n$backup_ts\n$roll_to_ts\n$opl_last_e_ts" >&2
+    exit 1
+  fi
+
+  # Backup cutomized oplog
+  # TODO(bruce): incremental backup of oplog
+  local roll_to_t="Timestamp(${roll_to_ts}, 0)"
+  local c_backup_opl="mkdir -p ${TMP_OPLOG_BP} 
+   && mongodump 
+   --host localhost 
+   --out ${TMP_OPLOG_BP} 
+   -d local 
+   -c oplog.rs 
+   -q '{ts: {\$gt: ${backup_t} , \$lte: ${roll_to_t}}}' &> ${TMP_OPLOG_BP}/backup.log "
+  run "${c_backup_opl}" "${connect}" ${SUCCESS_CODE}
+  stop $? "Backup customized oplog"
+
+  # Check backup log
+  local log="${TMP_OPLOG_BP}/backup.log"
+  local c_check_log="cat $log; grep -Ei \"ERROR|WARN\" ${log} "
+  run "${c_check_log}" "${connect}" ${GREP_NO_FOUND_CODE} result
+  stop $? "Check backup oplog log"
+  echo -e "Print backup oplog log:\n$result"
+
+  # Copy full backup
+  # full_bp_local_path
+
+  local full_b_l_path="${local_ws}/week_${week}"
+  if [[ $full_b_l_path ]]; then
+    rm -rf "${local_ws}/week_${week}"
+    echo -e "\ncleaned the $full_b_l_path"
+  fi
+  scp -r -o ProxyCommand="ssh -W %h:%p ${hop_user}@${sshhop}" \
+    ${user}@${replset_secondary}:${FULL_BP}/week_${week} ${local_ws}
+  stop $? "scp full backup"
+
+  # Copy the oplog, merge them together to a location used for restore
+  local opl_local_path="${local_ws}/week_${week}/oplog.bson"
+  rm $opl_local_path
+  scp -o ProxyCommand="ssh -W %h:%p ${hop_user}@${sshhop}" \
+    ${user}@${replset_secondary}:${OPLOG_BF} ${opl_local_path}
+  stop $? "scp replog bson file"
+  ls -l $opl_local_path | echo
+
+  # start docker to restore
+  echo "Restore to point in time with docker"
+  local entry_f="restore_docker_entry.sh"
+  local n="local_docker_m"
+  docker run \
+    -it \
+    --name "$n" \
+    --mount type=bind,source="${local_ws}/week_${week}",target="/week_${week}" \
+    -v "${local_ws}/${entry_f}:/${entry_f}" \
+    --entrypoint "/bin/bash" \
+    mongo:${mongo_v} \
+    ${entry_f} ${week}
+  docker stop "$n"
+  docker rm "$n"
+}
+
+# main "ubuntu" "52.53.189.82" "ec2-user" "172.31.1.166" 4 "1531365300" # for test
+main "$@"
