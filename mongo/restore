@@ -22,14 +22,41 @@ function abstract_func() {
 
 function printUsage() {
   cat <<EOF
-Usage: $0 <ssh hop user name> <ssh hop IP> <EC2 user name> <EC2 IP> <week number> <expected point in time>
+Usage: $0 <ssh hop user name> <ssh hop IP> <EC2 user name> <EC2 IP> <week number> <expected point in time> <local worksapce>
  Valid week number: 1-7
  Valid expected point in time value: timestamp form
  e.g.: 
   ./restore "ubuntu" "52.53.189.82" "ec2-user" "172.31.1.166" 4 "1531365300"
 EOF
 }
-
+#########################################################################################
+# Restore to point of time with mongorestore.
+# - Use the result ot backup done by scheduled backup cron deployed by script
+# 'backup_deploy_monitor'
+# - Assume docker is available
+#
+# Globals:
+#   TMP_OPLOG_BP
+#   OPLOG_BF
+#   OPLOG_FIR_EVENT_FLAG
+#   OPLOG_LAST_EVENT_FLAG
+#   MONGO_V
+#   GREP_NO_FOUND_CODE
+#   SUCCESS_CODE
+#
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   week: used to find directory of backup. Its valide value should keep consistant
+#         with that in backup
+#   expected point in time: timestamp value.
+#   local workspace: default current directory.
+#
+# Returns:
+#   None
+#########################################################################################
 main() {
   local hop_user=$1
   local sshhop=$2
