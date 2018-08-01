@@ -5,6 +5,17 @@ function printUsage() {
 Usage: $0 <replset name>
 EOF
 }
+#########################################################################################
+# Assume
+# EC2 instances are ready for PRIMARY or SECONDARY member
+# OS:  Amazon Linux AMI  EBS-backed,
+# nodes are located in different zone; able to access internet via subnet
+# Auto-assign public IP (Disable)
+# Protect accident termination
+# Added 3 extra volumes for Mongo data, journal and log in order
+# restricted Security group inbound
+# Selected right ssh key
+#########################################################################################
 main() {
   local replset_n=$1
   # 1
