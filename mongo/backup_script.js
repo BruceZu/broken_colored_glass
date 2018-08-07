@@ -44,7 +44,7 @@ timeStampOfLatestOplog = db.oplog.rs.find().sort({ ts: -1 }).limit(1).next().ts;
 print("\nAfter lock, the most recent oplog timestamp *2*" + timeStampOfLatestOplog + "\n");
 
 /* Full backup.  Assume enough spaces */
-let week = ISODate().getDay(); // same as bash: date +%u only the sun is 0 not 7
+let week = ISODate().getDay(); // same as bash: date +%w not +%u only the sun is 0 not 7
 if (week == 0) {
     week = 7;
 }

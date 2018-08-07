@@ -1,7 +1,7 @@
 #!/bin/bash
 # set -x
 source ./common.sh
-mail_receiver=bzu@fortinet.com
+readonly MAIL_TO=bzu@fortinet.com
 
 #############################################################
 # Monitore physical disk space used by Mongo replset members
@@ -22,37 +22,47 @@ do_business() {
   local node="$4"
   local replset_name="$5"
   local verbose="$6"
-  echo "Physical disk space and log rotation checking on EC2 on ${node}"
+
   local comm='echo && hostname && df -h && sort -k2 /var/lib/logrotate.status |grep mongo && ls -htl /log'
 
   local status
   status=$(echo "$comm" | ${connect})
   if [ $? -ne 0 ]; then
     local mess="Find: $status.\n Try: echo \" ${comm} \";"
-    echo -e "$mess" >&2
-    echo -e "$mess" | ${connect} | mail -s "Mongodb issue from ${replset_name}" $mail_receiver
+    err "$mess"
+    echo -e "$mess" | ${connect} | mail -s "Mongodb issue from ${replset_name}" $MAIL_TO
     return
   fi
   if [[ -n "${verbose}" && "${verbose}" == "-v" ]]; then
+    echo "Physical disk space and log rotation checking on EC2 on ${node}"
     echo -e "$status"
   fi
   local warnings=$(echo 'df -h' | ${connect} | awk '0+$5 >= 80  {print $0}')
   local warn_size=$(echo $warnings | sed '/^$/d' | wc -l)
   if [ $warn_size -ne 0 ]; then
     local mess="some disk usage is over 80%:\n${warnings}"
-    echo -e "$mess" >&2
-    echo -e "$mess" | mail -s "mongodb issue from ${replset_name}" ${mail_receiver}
+    err "$mess"
+    echo -e "$mess" | mail -s "mongodb issue from ${replset_name}" ${MAIL_TO}
     return
   fi
 
   local clock=$(date +%k)
   if [[ $(date +%u) -eq 4 && $clock -ge 13 && $clock -lt 18 ]]; then
-    echo -e "${status} " | mail -s "mongodb status from ${replset_name}" ${mail_receiver}
+    echo -e "${status} " | mail -s "mongodb status from ${replset_name}" ${MAIL_TO}
   fi
 }
 
-main() {
-  env_check
+function print_usage() {
+  cat <<EOF
+    By default there is not log output for the schedled cron job case
+    with "$0 -v" enable verbose 
+EOF
+}
+
+function main() {
+  if [[ $# == 0 ]]; then
+    print_usage
+  fi
   for_each_replst_node "$@"
 }
 

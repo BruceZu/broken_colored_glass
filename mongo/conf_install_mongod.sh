@@ -1,5 +1,7 @@
 #!/bin/bash
 # set -x
+source ./common.sh
+
 function printUsage() {
   cat <<EOF
 Usage: $0 <replset name>
@@ -35,10 +37,10 @@ main() {
   # 'pl-68a54001 (com.amazonaws.us-west-2.s3)' is a gateway
   # also see https://docs.aws.amazon.com/glue/latest/dg/vpc-endpoints-s3.html
   # " use private IP addresses to access Amazon S3 with no exposure to the public internet"
-  . ./common.sh
+
   cat /etc/passwd | grep mongod
   if [[ $? == 0 && -f /etc/mongod.conf ]]; then
-    echo "installed " >&2
+    err "mongo has been installed"
   else
     echo "not installed, now intall:"
     sudo rm /etc/yum.repos.d/mongodb-org-3.4.repo
@@ -50,14 +52,15 @@ enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.repos.d/mongodb-org-3.6.repo
     sudo yum install -y mongodb-org
   fi
-
+  # verify
+  echo "Verify the mongo software installation  =============1==========="
   cat /etc/passwd | grep mongod
   if [[ $? == 0 && -f /etc/mongod.conf ]]; then
     echo "installed "
   else
-    echo "Install failed" >&2
+    err "Install failed"
   fi
-
+  echo "================================================================"
   # ２
   # Storage
   # Issues: The device name is not same as the volume name. see
@@ -65,18 +68,19 @@ gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.re
   # http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
   # http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-booting-from-wrong-volume.html
 
-  Echo "Storage for replset member. Not for arbitor "
+  echo "Storage for replset member. Not for arbitor "
   for d in /data /journal /log; do
     create_d_for_u_with_p $d mongod mongod 755
   done
 
+  declare -i eturn_codes
   for d in /dev/sdb /dev/sdc /dev/sdd; do
     lsblk --f $d | grep ext4
-    declare -ri return_codes=(${PIPESTATUS[*]})
-    if [[ "${return_codes[0]}" -eq 0 || "${return_codes[1]}" -ne 0 ]]; then
+    return_codes=(${PIPESTATUS[*]})
+    if [[ "${return_codes[0]}" -eq 0 && "${return_codes[1]}" -ne 0 ]]; then
       sudo mkfs.ext4 $d
     elif [[ "${return_codes[0]}" -ne 0 ]]; then
-      echo "failed to lsblk" >&2
+      err "failed to lsblk"
       exit 1
     fi
   done
@@ -84,22 +88,27 @@ gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.re
   cat /etc/fstab | grep journal
   if [[ $? != 0 ]]; then
     echo '/dev/sdb /data    ext4 defaults,auto,noatime,noexec 0 0
-  /dev/sdc /journal ext4 defaults,auto,noatime,noexec 0 0
-  /dev/sdd /log     ext4 defaults,auto,noatime,noexec 0 0' | sudo tee -a /etc/fstab
+/dev/sdc /journal ext4 defaults,auto,noatime,noexec 0 0
+/dev/sdd /log     ext4 defaults,auto,noatime,noexec 0 0' | sudo tee -a /etc/fstab
   else
-    echo "fstab has been configured" >&2
+    err "fstab has been configured"
   fi
 
   for d in /data /journal /log; do
     mountpoint $d
     if [[ $? != 0 ]]; then
       sudo mount $d
+      echo "mounted $d"
     fi
     create_d_for_u_with_p $d mongod mongod 755
   done
 
   if [[ ! -L /data/journal ]]; then
     sudo ln -s /journal /data/journal
+    echo "soft link journal Done"
+  else
+    echo "soft link journal has already been Done"
+    ls -l /data
   fi
 
   sudo touch /log/mongod.log &&
@@ -111,20 +120,23 @@ gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.re
     sudo e2label /dev/xvdb /dat-mongo
 
   # verify
-  echo "Verify the following info"
-  ll /data
+  echo "Verify the following info  ============2============"
+  ls -hl /data
   df -h
   cat /etc/fstab
   lsblk -f /dev/sdb /dev/sdc /dev/sdd
-
+  echo "===================================================="
   # 3
   #　ulimit setting Reference https://access.redhat.com/solutions/199993
   echo '* soft nofile 64000
 * hard nofile 64000
 * soft nproc 64000
 * hard nproc 64000' | sudo tee /etc/security/limits.d/90-mongodb.conf
-  cat /etc/security/limits.d/90-mongodb.conf
 
+  # verify
+  echo "Verify the ulimit setting    =============3==========="
+  cat /etc/security/limits.d/90-mongodb.conf
+  echo "======================================================"
   # ４
   #　read ahead settings　see Reference https://www.percona.com/blog/2016/08/12/tuning-linux-for-mongodb/
 
@@ -136,8 +148,10 @@ gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.re
         echo 'ACTION=="add|change", KERNEL=="sdc", ATTR{bdi/read_ahead_kb}="16"' | sudo tee -a /etc/udev/rules.d/85-ebs.rules &&
         echo 'ACTION=="add|change", KERNEL=="sdd", ATTR{bdi/read_ahead_kb}="16"' | sudo tee -a /etc/udev/rules.d/85-ebs.rules
     fi
+  # verify
+  echo "Verify the read ahead settings   =============4==========="
   cat /etc/udev/rules.d/85-ebs.rules
-
+  echo "=========================================================="
   # 5
   # alive settings and set hostname
   #update keep alive
@@ -162,10 +176,11 @@ echo `hostname -A`  | sudo tee -a /etc/hostname && sudo hostname -F /etc/hostnam
   sudo sysctl -w net.ipv4.tcp_keepalive_time=3000 &&
     echo $(hostname -A) | sudo tee /etc/hostname && sudo hostname -F /etc/hostname
 
-  # Verify
+  # verify
+  echo "Verify alive settings and set hostname    =============5==========="
   sudo sysctl -a | grep net.ipv4.tcp.keepalive_time
   hostname
-
+  echo "==================================================================="
   # 6
   # Disable Transparent Huge Pages
   service="disable-transparent-hugepages"
@@ -206,11 +221,12 @@ esac' | sudo tee $d
   echo 'never' | sudo tee ${d}/enabled && echo 'never' | sudo tee ${d}/defrag
 
   # Verify
+  echo "Verify Disable Transparent Huge Pages  =============6==========="
   for f in $d/enabled $d/defrag; do
     cat $f | grep "\[never\]"
     if [ $? == 0 ]; then echo "done"; else "failed "; fi
   done
-
+  echo "================================================================"
   # 7
   # config mongo YAML file; YAML does not support tab characters for indentation: use spaces instead.
   # see https://docs.mongodb.com/v3.6/reference/configuration-options/#yaml-json
@@ -243,13 +259,25 @@ net:
 replication:
   replSetName: "'${replset_n}'"
 ' | sudo tee /etc/mongod.conf
+  # Verify
+  echo "Verify mongo YAML file  =============7==========="
+  cat /etc/mongod.conf
+  echo "================================================="
 
   # 8
   # start mongod
-  sudo service mongod start
+  sudo service mongod status | grep running
+  if [[ $? -eq 0 ]]; then
+    echo "running"
+  else
+    sudo service mongod start
+  fi
+
   # Verify
+  echo "Verify start mongod   =============8 the last step==========="
   sudo service mongod status
   sudo netstat -plnt | egrep mongod
+  echo "============================================================="
 }
 
 if [[ -z "$@" ]]; then

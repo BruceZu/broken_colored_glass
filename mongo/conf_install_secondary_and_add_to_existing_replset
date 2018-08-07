@@ -1,0 +1,38 @@
+#!/bin/bash
+source ./common.sh
+main() {
+  # $@ is not array
+  local input=("$@")
+  local nodes=("${input[@]:0:$#-3}")
+  local hop=${input[-3]}
+  local replset_name=${input[-2]}
+
+  #${!#}
+  local pri="${@: -1}"
+
+  local pop="
+  Nodes: ${nodes[@]}
+  sshhop: ${hop}
+  Replset name: ${replset_name}
+  Primary: $pri
+  "
+  confirm_or_exit "$pop"
+  local hu="${sshhop_user_name}"
+  local nu="${ec2_user_name}"
+
+  local f="conf_install_mongod.sh"
+  local common_lib="common.sh"
+  for node in ${nodes[@]}; do
+    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${common_lib} ${nu}@${node}:/tmp/
+    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
+    echo "cd /tmp; ./$f $replset_name" | ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
+  done
+  add_nodes_to_existing_replset "${nodes[@]}" "${hu}" "$hop" "${nu}" "${pri}" "false"
+}
+
+if [[ -z "$@" ]]; then
+  echo -e "Call this bash file like\n ./$0 node1 node2 node2 node4 ... noden sshopIP replset-name primary"
+  exit 1
+fi
+
+main "$@"

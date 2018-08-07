@@ -2,14 +2,8 @@
 # set -x
 # By far these operations are idempotent. Tue Jul 10 12:20:26 PDT 2018
 . ./common.sh
-. ./common_replsets_nodes_ip.sh
-readonly SHELL_F="backup.sh"
+
 readonly JS_F="backup_script.js"
-readonly EC2_BACKUP_F_PATH="~/backuP"
-# Crontab. it is not same as that in ubuntu where its location is
-# $ sudo ls -lha  /var/spool/cron/crontabs/<user>
-# and it's content can't be updated by command.
-readonly EC2_CRON_P="/var/spool/cron"
 
 function transfer_file_local_replset_member() {
   local hop_user=$1
@@ -48,9 +42,9 @@ function deploy_backup() {
   local connect="ssh ${hop_user}@${sshhop} ssh -o StrictHostKeyChecking=no ${user}@${replset_member} 2>/dev/null"
 
   # Prepare the directory and MODE
-  local command_create_path="mkdir -p ~/backup 
-  && sudo mkdir -p ${FULL_BP}/week_{1,2,3,4,5,6,7} 
-  && sudo chmod -R 777 ${FULL_BP} 
+  local command_create_path="mkdir -p ${EC2_BACKUP_F_PATH} \
+  && sudo mkdir -p ${FULL_BP}/week_{1,2,3,4,5,6,7} \
+  && sudo chmod -R 777 ${FULL_BP} \
   && ls -lha ${FULL_BP}"
 
   run "${command_create_path}" "${connect}" 0
@@ -60,15 +54,15 @@ function deploy_backup() {
   transfer_file_local_replset_member ${hop_user} ${sshhop} ${user} ${replset_member} "${local_d}/${JS_F}" "${EC2_BACKUP_F_PATH}/${JS_F}"
   transfer_file_local_replset_member ${hop_user} ${sshhop} ${user} ${replset_member} "${local_d}/${SHELL_F}" "${EC2_BACKUP_F_PATH}/${SHELL_F}"
 
-  local command_chmod='sudo chmod -R 777 ~/backup && ls -alh ~/backup'
+  local command_chmod="sudo chmod -R 777 ${EC2_BACKUP_F_PATH} && ls -alh ${EC2_BACKUP_F_PATH}"
   run "${command_chmod}" "${connect}" 0
 
   # Cron job
 
-  local command_cron="touch /tmp/${user} 
-  && sudo echo \"0 3 * * *  /home/ec2-user/backup/backup.sh\" >/tmp/${user} 
-  && sudo cp /tmp/${user} ${EC2_CRON_P} 
-  && sudo cat ${EC2_CRON_P}/${user} 
+  local command_cron="touch /tmp/${user} \
+  && sudo echo \"0 3 * * *  ${EC2_BACKUP_F_PATH}/${SHELL_F} \" >/tmp/${user} \
+  && sudo cp /tmp/${user} ${EC2_CRON_P} \
+  && sudo cat ${EC2_CRON_P}/${user} \
   && sudo ls -alh ${EC2_CRON_P}"
   run "${command_cron}" "${connect}" 0
 }
@@ -100,7 +94,7 @@ function verify_backup() {
   grep_expected_code_of_no_result=1
   for week in week_{1,2,3,4,5,6,7}; do
     echo "Verify $week"
-    local command="grep -Ei 'WARN|ERROR' ${FULL_BP}/$week/backup.log"
+    local command="grep -Ei 'WARN|ERROR' ${FULL_BP}/${week}/backup.log"
     # set -x
     run "${command}" "${connect}" ${grep_expected_code_of_no_result}
 
@@ -224,7 +218,7 @@ main() {
 
   if [ $(ssh-add -l | sed '/^$/d' | wc -l) -lt 3 ]; then
     local mess="$(ssh-add -l) \nTry: ssh-add -l"
-    echo -e "$mess" >&2
+    err "$mess"
     echo -e "$mess" | mail -s "==SSH key is not ready" ${mail_receiver}
     exit 1
   fi

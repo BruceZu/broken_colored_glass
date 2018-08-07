@@ -6,7 +6,7 @@ readonly OPLOG_BF="${TMP_OPLOG_BP}/local/oplog.rs.bson"
 readonly OPLOG_FIR_EVENT_FLAG="oplog first event time:  "
 readonly OPLOG_LAST_EVENT_FLAG="oplog last event time:   "
 readonly MONGO_V="MongoDB shell version v"
-declare -ir GREP_NO_FOUND_CODE=1
+
 declare -ir SUCCESS_CODE=0
 
 function abstract_func() {
@@ -92,7 +92,7 @@ main() {
   local m="Get the full backup time "
   run "${c_get_backup_t}" "${connect}" ${SUCCESS_CODE} result
   if [[ $? == 1 ]]; then
-    echo -e "\nFailed: $m" >&2
+    err "\nFailed: $m"
     exit 1
   else
     local backup_t=${result:${#result}-24}
@@ -123,8 +123,8 @@ main() {
     (($roll_to_ts <= $opl_last_e_ts)); then
     echo -e "\nVaid: $m"
   else
-    echo -e "\nInvalid: $m " >&2
-    echo -e "$opl_first_e_ts\n$backup_ts\n$roll_to_ts\n$opl_last_e_ts" >&2
+    err"\nInvalid: $m "
+    err"$opl_first_e_ts\n$backup_ts\n$roll_to_ts\n$opl_last_e_ts"
     exit 1
   fi
 

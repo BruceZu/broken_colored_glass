@@ -1,5 +1,5 @@
 #!/bin/bash
-
+source ./common.sh
 main() {
   # $@ is not array
   local input=("$@")
@@ -7,16 +7,21 @@ main() {
   local nodes=("${input[@]:0:$#-2}")
   #${!#}
   local replset_name="${@: -1}"
-  local pop="Nodes: ${nodes[@]}\nsshhop: ${hop}\nReplset name: $replset_name"
+  local pop="
+  Nodes: ${nodes[@]}
+  sshhop: ${hop}
+  Replset name: $replset_name"
   confirm_or_exit "$pop"
 
-  local hu=ubuntu
-  local nu=ec2-user
+  local hu="${sshhop_user_name}"
+  local nu="${ec2_user_name}"
 
-  f="conf_install_mongod.sh"
+  local f="conf_install_mongod.sh"
+  local common_lib="common.sh"
   for node in ${nodes[@]}; do
+    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${common_lib} ${nu}@${node}:/tmp/
     scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
-    ssh ${hu}@$hop ssh ${nu}@$node "bash /tmp/$f $replset_name"
+    echo "cd /tmp; ./$f $replset_name" | ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
   done
 
   # Select one as primary
@@ -27,46 +32,32 @@ main() {
   # replset initiate
   local pop="Sure the replset is not initialized"
   confirm_or_exit "$pop"
-  echo "mongo --eval \"rs.initiate()\"" | ssh -t ${hu}@$hop ssh ${nu}@$pri
+  local js="\"rs.initiate()\""
+  mongo_eval "${js}" "${hu}" "${hop}" "${nu}" "${pri}"
+
   # Current config
-  show_replset_config @{hu} ${hop} ${nu} ${pri}
-  pop="Sure only one member in replset"
+  show_replset_config "${hu}" "${hop}" "${nu}" "${pri}"
+  local pop="Sure only one member in replset"
   confirm_or_exit "$pop"
   # Set higher priority to make it as a permanent primary
-  echo "mongo --eval \"
+  js="\"
  conf=rs.config();
  conf.members[0].priority = 10;
  rs.reconfig(conf)
-  \"" | ssh -t ${hu}@$hop ssh ${nu}@$pri
+  \""
+  mongo_eval "${js}" "${hu}" "${hop}" "${nu}" "${pri}"
 
   # Current config
-  show_replset_config @{hu} ${hop} ${nu} ${pri}
+  show_replset_config "${hu}" "$hop" "${nu}" "${pri}"
   pop="Check only one member in replsetm. These nodes are not in it: ${secs[@]}"
   confirm_or_exit "$pop"
-  # Add nodes
-  for sec in ${secs[@]}; do
-    local host=$(@{hu}@$hop ssh ${nu}@$sec hostname)
-    echo "mongo --eval \"rs.status().members.forEach(function(m){
-    printjson(m.name + ' : ' + m.stateStr)
-});   \"" | ssh -t ${hu}@$hop ssh ${nu}@$pri | grep $host
-    if [[ $? == 0 ]]; then
-      echo "The current node $host has been in the replset" >&2
-    else
-      echo "mongo --eval \"rs.add('$host')\"" | ssh -t ${hu}@$hop ssh ${nu}@$pri
-    fi
-  done
 
-  # Check status
-  show_replset_status @{hu} ${hop} ${nu} ${pri}
-  # Check config
-  show_replset_config @{hu} ${hop} ${nu} ${pri}
-  # DB, collections, documents number.
-  replset_info_db_coll_docu_number ${nodes[@]} ${hu} $hop ${nu}
+  add_nodes_to_existing_replset "${secs[@]}" "${hu}" "$hop" "${nu}" "${pri}" "false"
 }
 
 if [[ -z "$@" ]]; then
   echo -e "Call this bash file like\n ./$0 node1 node2 node2 node4 ... noden sshopIP replset-name"
   exit 1
 fi
-. ./common.sh
+
 main "$@"

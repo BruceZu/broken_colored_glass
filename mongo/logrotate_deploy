@@ -23,17 +23,23 @@ function do_business() {
 
   declare -r f=logrotate-apply-assum-5G-space.sh
   if [[ ! -e ./$f ]]; then
-    echo "The batch file $f is not exist" >&2
+    err "The batch file $f is not exist"
     return 1
   fi
+
+  declare -r common_lib="common.sh"
+  declare -r nodes_lib="common_replsets_nodes_ip.sh"
+  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${nodes_lib} ${nu}@${node}:/tmp/
+  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${common_lib} ${nu}@${node}:/tmp/
   scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
-  ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node "bash /tmp/$f"
+  echo "cd /tmp; ./$f " | ssh -t ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
 }
 
 function main() {
   env_check
   for_each_replst_node "$@"
   sleep 2
+  echo -e "\n\n Done, check the replsets status:"
   each_replsets_primary_and_status
 }
 
