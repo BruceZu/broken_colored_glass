@@ -1,5 +1,4 @@
 #!/bin/bash
-source ./common_replsets_nodes_ip.sh
 source ./common.sh
 
 function upgrade_node_with_binary_file() {
@@ -127,9 +126,20 @@ function upgrade_replset_to_mongo_3_6() {
 }
 
 function main() {
-  local binary_name="mongodb-linux-x86_64-amazon-v3.6-latest.tgz"
-  local binary_sha="9fbbaf6d01433e0a8083cf833bb07d2e9a4987f0"
+  local binary_name="v3.6-latest.tgz"
+  local url_jar="http://downloads.mongodb.org/linux/mongodb-linux-x86_64-amazon-v3.6-latest.tgz"
+  local url_sha1="${url_jar}.sha1"
+  wget ${url_jar} -O ${binary_name}
+  local binary_sha1=$(wget -O - -q ${url_sha1} | awk '{print $1}')
   local new_version="3.6.8"
+
+  local sha1=$(sha1sum ${binary_name} | awk '{print $1}')
+  if [[ "${binary_sha1}" != "${sha1}" ]]; then
+    echo "the download file's integration is wrong"
+    exit 1
+  else
+    echo "${binary_name} is ready"
+  fi
 
   echo "upgrade ${dev_single_N_Calif_name}"
   upgrade_standalone_node_to_mongo_3_6 "${sshhop_user_name}" "${dev_N_Calif_hop}" \
@@ -153,6 +163,8 @@ function main() {
     "${ec2_user_name}" "${pro_ext_N_Calif_1b_pri_new}" \
     "${binary_name}" "${binary_sha}" "$new_version" \
     "${pro_ext_N_Calif_1a}" "${pro_ext_N_Calif_1a_new}"
+
+  rm -f "${binary_name}"
 }
 
 #############################################################
