@@ -1,0 +1,31 @@
+#!/bin/bash
+# set -x
+source ./common.sh
+main() {
+
+  local node="$1"
+  local hop="$2"
+
+  local pop="
+  Node: ${node}
+  sshhop: ${hop}"
+  confirm_or_exit "$pop"
+
+  local hu="${sshhop_user_name}"
+  local nu="${ec2_user_name}"
+
+  local install_f="conf_install_mongod.sh"
+  for f in "${install_f}" "common.sh" "./common_replsets_nodes_ip.sh"; do
+    scp -o ConnectTimeout=10 -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
+  done
+  set -x
+  echo "cd /tmp; ./$install_f" | ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
+  set +x
+}
+
+if [[ -z "$@" ]]; then
+  echo -e "Call this bash file like\n ./$0 node sshopIP"
+  exit 1
+fi
+
+main "$@"

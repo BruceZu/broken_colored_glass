@@ -1,0 +1,81 @@
+#!/bin/bash
+# set -x
+source ./common.sh
+readonly MAIL_TO=bzu@fortinet.com
+
+#############################################################
+# Monitore physical disk space used by Mongo replset members
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+#   verbose "-v"
+# Returns:
+#   None
+#############################################################
+do_business() {
+  local connect="ssh ${1}@${2} ssh -o StrictHostKeyChecking=no ${3}@${4} 2>/dev/null"
+  local node="$4"
+  local replset_name="$5"
+  local verbose="$6"
+
+  local comm='echo \
+  && hostname \
+  && df -h && sort -k2 /var/lib/logrotate.status |grep mongo \
+  && ls -hls /data/WiredTigerLAS.wt \
+  && ls -htl /log \
+  && (echo; date; sudo grep -Ei "error|warn|failed" /log/mongod.log | tail -n 2; date; echo)
+  '
+  local lookside_table_size=$(echo "stat -c %s /data/WiredTigerLAS.wt" | ${connect})
+  if [[ $lookside_table_size -gt 4096 ]]; then
+    err "WiredTigerLAS.wt is increating!  danger! "
+  else
+    echo "WiredTigerLAS.wt is in normal size"
+  fi
+
+  local status
+  status=$(echo "$comm" | ${connect})
+  if [ $? -ne 0 ]; then
+    local mess="Find: $status.\n Try: echo \" ${comm} \";"
+    err "$mess"
+    echo -e "$mess" | ${connect} | mail -s "Mongodb issue from ${replset_name}" $MAIL_TO
+    return
+  fi
+  if [[ -n "${verbose}" && "${verbose}" == "-v" ]]; then
+    echo "Physical disk space and log rotation checking on EC2 on ${node}"
+    echo -e "$status"
+  fi
+  local warnings=$(echo 'df -h' | ${connect} | awk '0+$5 >= 80  {print $0}')
+  local warn_size=$(echo $warnings | sed '/^$/d' | wc -l)
+  if [ $warn_size -ne 0 ]; then
+    local mess="some disk usage is over 80%:\n${warnings}"
+    err "$mess"
+    echo -e "$mess" | mail -s "mongodb issue from ${replset_name}" ${MAIL_TO}
+    return
+  fi
+
+  local clock=$(date +%k)
+  if [[ $(date +%u) -eq 4 && $clock -ge 13 && $clock -lt 18 ]]; then
+    echo -e "${status} " | mail -s "mongodb status from ${replset_name}" ${MAIL_TO}
+  fi
+}
+
+function print_usage() {
+  cat <<EOF
+    By default there is not log output for the schedled cron job case
+    with "$0 -v" enable verbose 
+EOF
+}
+
+function main() {
+  if [[ $# == 0 ]]; then
+    print_usage
+  fi
+  for_each_replst_node "$@"
+}
+
+main "$@"

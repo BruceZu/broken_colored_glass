@@ -46,6 +46,86 @@ function rm_backup_cron_job_from_new_primary() {
   echo "crontab -l" | ${to_new_pri}
 }
 
+#############################################################
+# Upgrade local mongo instance with binary located under /tmp in an idempotence way.
+# It works for upgrading from 3.4->3.6
+# Globals:
+#   None
+# Arguments:
+#   binary name. E.g. mongodb-linux-x86_64-amazon-v3.6-latest.tgz
+#   binary sha1. E.g. 9fbbaf6d01433e0a8083cf833bb07d2e9a4987f0
+#   new_version. E.g. 3.6.8
+# See https://www.mongodb.org/dl/linux/x86_64-amazon?_ga=2.107784130.1168728247.1540503645-624720894.1539377059
+# Returns:
+#   None
+############################################################
+function upgrade_local_mongo() {
+  local binary_name="$1"
+  local binary_sha="$2"
+  local new_version="$3"
+
+  mongod -version | grep "$new_version"
+  if [[ $? -eq 0 ]]; then
+    echo -e "\nIt has already been: $new_version"
+    exit 0
+  fi
+  shasum /tmp/${binary_name} | grep ${binary_sha}
+  local pip_return_codes=(${PIPESTATUS[*]})
+  one_pipe_stop "${pip_return_codes[@]}" "The binary shasum is not right" "Failed to get binary shasum"
+
+  tar -xvzf /tmp/${binary_name} -C /tmp/ --strip-components 1
+  stop $? "extract the binary file"
+
+  sudo service mongod stop
+  sudo service mongod status | grep "stopped"
+  stop $? "stop mongod service"
+
+  sudo cp /tmp/bin/* /usr/bin/
+  stop $? "replace old bianry files"
+
+  mongod -version | grep "$new_version"
+  stop $? "check upgraded mongod is the expected version $new_version."
+
+  grep "bindIp: 0.0.0.0" /etc/mongod.conf
+  if [[ $? -ne 0 ]]; then
+    echo "\n backup the configure file under ~/ "
+    sudo cp /etc/mongod.conf ~/mongod.conf.backup-"$(date +%s)"
+    sudo sed -i '/net:/a \  bindIp: 0.0.0.0' /etc/mongod.conf
+    echo -e "\n\n
+From 3.6 the configuration need check:
+storage:
+  journal:
+    enabled: true
+net:
+  bindIp: 0.0.0.0
+  \n\n"
+    echo "=====start"
+    cat /etc/mongod.conf
+    echo "=====end"
+    cat /etc/mongod.conf | grep "bindIp: 0.0.0.0" -A 3 -B 3
+    stop $? "Check: mongod.conf journal and bindIp."
+  fi
+
+  sudo service mongod start
+  sudo service mongod status | grep "running"
+  stop $? "start mongod service"
+}
+
+function one_pipe_stop() {
+  local input=("$@")
+  local return_codes=("${input[@]:0:$#-2}")
+  local last_fail="${input[-2]}"
+  local first_fail="${input[-1]}"
+  if [[ ${return_codes[0]} -eq 0 && ${return_codes[1]} -ne 0 ]]; then
+    err "${last_fail}"
+    exit 1
+  elif [[ ${return_codes[0]} -ne 0 ]]; then
+    err "${first_fail}"
+    exit 1
+  fi
+  echo "Pipe commands are all success"
+}
+
 function stop() {
   declare -ir code=$1
   local m=$2
@@ -109,6 +189,81 @@ function confirm_or_exit() {
   fi
 }
 
+function dignostic_info() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+
+  echo -e "\n DB version:"
+  local js="\"rs.slaveOk(); db.version();\""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+  echo -e "\n rs config:"
+  js="\"rs.slaveOk(); rs.conf();\""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+  echo -e "\n rs status:"
+  js="\"rs.slaveOk(); rs.status();\""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+  echo -e "\n db.serverStatus().metrics.cursor:"
+  js="\"rs.slaveOk(); db.serverStatus().metrics.cursor;\""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+  echo -e "\n db.serverStatus().metrics.cursor:"
+  js="\" rs.slaveOk(); db.serverStatus().wiredTiger.cache; \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+}
+
+# zip remote files, fetch to local, and remove it from remote
+function zip_d_to_fetch_remove() {
+  local to="$1"
+  local name="$2"
+  local d="$3"
+  local hu="$4"
+  local hop="$5"
+  local nu="$6"
+  local node="$7"
+  local local_d="$8"
+  local_d="${local_d:-$(pwd)}"
+
+  local to_issue_node="ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${node}"
+
+  echo "sudo zip -19Tvr ${to}/${name} ${d}" | ${to_issue_node}
+  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ${nu}@${node}:${to}/${name} ${local_d}
+  echo "sudo rm -f ${to}/${name}" | ${to_issue_node}
+}
+
+function zip_diagnostic_mongodlog() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+
+  local diagnosetic_d="$5"
+  local mongodlog_d="$6"
+  local zip_d="$7"
+
+  local default_diagnosetic_d="/data/diagnostic.data"
+  diagnosetic_d="${diagnosetic_d:-${default_diagnosetic_d}}"
+
+  local default_log_d="/log"
+  mongodlog_d="${mongodlog_d:-${default_log_d}}"
+
+  local default_zip_d="/data"
+  zip_d="${zip_d:-${default_zip_d}}"
+
+  local diagnosetic_zip_f="diagnostic_data.zip"
+  local mongodlog_zip_f="mongodlog.zip"
+
+  zip_d_to_fetch_remove \
+    "${zip_d}" "${diagnosetic_zip_f}" "${diagnosetic_d}" "${hu}" "${hop}" "${nu}" "${node}"
+  zip_d_to_fetch_remove \
+    "${zip_d}" "${mongodlog_zip_f}" "${mongodlog_d}" "${hu}" "${hop}" "${nu}" "${node}"
+}
+
 #####################################################################
 # last arg `is_arbiter` valid value is 'true' or anything else value
 #####################################################################
@@ -124,7 +279,7 @@ function add_nodes_to_existing_replset() {
 
   # Add nodes
   for sec in ${nodes[@]}; do
-    local host=$(ssh ${hu}@${hop} ssh ${nu}@${sec} hostname)
+    local host=$(ssh ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${sec} hostname)
     show_replset_status "${hu}" "$hop" "${nu}" "${pri}" | grep "$host"
     local return_codes=(${PIPESTATUS[*]})
     if [[ "${return_codes[0]}" -eq 0 && "${return_codes[1]}" -ne 0 ]]; then
@@ -170,7 +325,7 @@ function show_replset_config() {
   local hop=$2
   local nu=$3
   local pri=$4
-  mongo_eval "\"rs.config().members.forEach(function(m){
+  mongo_eval "\"rs.slaveOk(); rs.config().members.forEach(function(m){
     printjson(m.host + '  ' + m.priority + '  ' + m.arbiterOnly)
     })  \"" "${hu}" "$hop" "${nu}" "${pri}"
 }
@@ -180,7 +335,7 @@ function show_replset_status() {
   local hop=$2
   local nu=$3
   local pri=$4
-  mongo_eval "\"rs.status().members.forEach(function(m){
+  mongo_eval "\"rs.slaveOk(); rs.status().members.forEach(function(m){
     printjson(m.name + '  ' + m.stateStr + ' health: ' +m.health)
     })  \"" "${hu}" "$hop" "${nu}" "${pri}"
 }
@@ -200,7 +355,10 @@ function replset_info_db_coll_docu_number() {
       let mdb = db.getSiblingDB(d.name);
       mdb.getCollectionInfos().forEach(function(c){
         let cc = mdb.getCollection(c.name);
-        printjson(  mdb + '.' + c.name + ': ' + cc.count() + ' validate result: '+ cc.validate(true).ok);
+        let stats = cc.stats();
+        let storageSize = (stats.storageSize / 1024 / 1024).toFixed(3);
+        let size = (stats.size / 1024 / 1024).toFixed(3);
+        printjson(mdb + '.' + c.name + ':count ' + cc.count() +',storageSize '+storageSize + 'MB, size ' + size + 'MB'+ ', validate result '+ cc.validate(true).ok);
       });
     });\"" "${hu}" "$hop" "${nu}" "${node}"
 
@@ -235,17 +393,20 @@ function replset_info_db_coll_docu_number() {
 #   None
 #######################################################################################################
 function each_replsets_primary_and_status() {
-  echo -e "\n\n${dev_both_name}: Expected primay is ${dev_both_Ore_2a_pri}"
+
+  echo -e "\n\n${dev_both_name}: Expected primay is ${dev_both_Ore_2a_pri}. sshhop is ${dev_both_Ore_hop}"
   show_replset_status ${sshhop_user_name} ${dev_both_Ore_hop} ${ec2_user_name} ${dev_both_Ore_2a_pri}
 
-  echo -e "\n\n${pro_swt_Ore_name}: Expected primay is ${pro_swt_Ore_pri_2c}"
+  echo -e "\n\n${pro_swt_Ore_name}: Expected primay is ${pro_swt_Ore_pri_2c}. sshhop is ${pro_swt_Ore_hop}"
   show_replset_status ${sshhop_user_name} ${pro_swt_Ore_hop} ${ec2_user_name} ${pro_swt_Ore_pri_2c}
 
-  echo -e "\n\n${pro_ext_Ore_name}: Expected primay is ${pro_ext_Ore_2c_pri}"
+  echo -e "\n\n${pro_ext_Ore_name}: Expected primay is ${pro_ext_Ore_2c_pri}. sshhop is ${pro_ext_Ore_hop}"
   show_replset_status ${sshhop_user_name} ${pro_ext_Ore_hop} ${ec2_user_name} ${pro_ext_Ore_2c_pri}
 
-  echo -e "\n\n${pro_ext_N_Calif_name}: Expected primay is ${pro_ext_N_Calif_1b_pri_new}"
+  echo -e "\n\n${pro_ext_N_Calif_name}: Expected primay is ${pro_ext_N_Calif_1b_pri_new}. sshhop is ${pro_ext_N_Calif_hop}"
   show_replset_status ${sshhop_user_name} ${pro_ext_N_Calif_hop} ${ec2_user_name} ${pro_ext_N_Calif_1b_pri_new}
+
+  echo "stand alone instance status"
 }
 
 function do_business() {
@@ -303,7 +464,7 @@ function env_check() {
 #   ${dev_both_Ore_2b} ${dev_both_Ore_2c_new} ${dev_both_Ore_2a_pri}
 #   ${dev_single_N_Calif}
 #   ${pro_swt_Ore_arbiter} ${pro_swt_Ore_pri_2c} ${pro_swt_Ore_sec_2b} ${pro_swt_Ore_sec_2a}
-#   ${pro_ext_Ore_arbiter} ${pro_ext_Ore_2b} ${pro_ext_Ore_2a} ${pro_ext_Ore_2c_pri}
+#   ${pro_ext_Ore_2b} ${pro_ext_Ore_2a} ${pro_ext_Ore_2c_pri}
 #   ${pro_ext_N_Calif_1a} ${pro_ext_N_Calif_1a_new} ${pro_ext_N_Calif_1b_pri_new}
 # Arguments:
 #   None
@@ -321,11 +482,15 @@ function for_each_replst_node() {
     apply_each_node "${sshhop_user_name}" "${dev_N_Calif_hop}" "${ec2_user_name}" "${node}" "$dev_single_N_Calif_name" "$@"
   done
 
-  for node in ${pro_swt_Ore_arbiter} ${pro_swt_Ore_pri_2c} ${pro_swt_Ore_sec_2b} ${pro_swt_Ore_sec_2a}; do
+  for node in ${pro_swt_n_calif_nodes[@]}; do
+    apply_each_node "${sshhop_user_name}" "${pro_swt_n_calif_hop}" "${ec2_user_name}" "${node}" "${pro_swt_rd_single_name}" "$@"
+  done
+
+  for node in ${pro_swt_nodes[@]}; do
     apply_each_node "${sshhop_user_name}" "${pro_swt_Ore_hop}" "${ec2_user_name}" "${node}" "$pro_swt_Ore_name" "$@"
   done
 
-  for node in ${pro_ext_Ore_arbiter} ${pro_ext_Ore_2b} ${pro_ext_Ore_2a} ${pro_ext_Ore_2c_pri}; do
+  for node in ${pro_ext_Ore_nodes[@]}; do
     apply_each_node "${sshhop_user_name}" "${pro_ext_Ore_hop}" "${ec2_user_name}" "${node}" "$pro_ext_Ore_name" "$@"
   done
 
@@ -344,12 +509,17 @@ function for_2_sec_per_replst() {
   done
 
   # "product - switch - Oregon"
-  for host in ${pro_swt_Ore_sec_2a} ${pro_swt_Ore_sec_2b}; do
+  for host in ${pro_swt_backup_nodes[@]}; do
     apply_each_node ${sshhop_user_name} ${pro_swt_Ore_hop} ${ec2_user_name} ${host} "${pro_swt_Ore_name}" "$@"
   done
 
+  # "product - switch North California RD Mongo standalone instance"
+  for host in ${pro_swt_n_calif_backup_nodes[@]}; do
+    apply_each_node "${sshhop_user_name}" "${pro_swt_n_calif_hop}" "${ec2_user_name}" "${host}" "${pro_swt_rd_single_name}" "$@"
+  done
+
   # "product - extender - Oregon"
-  for host in ${pro_ext_Ore_2b} ${pro_ext_Ore_2a}; do
+  for host in ${pro_ext_Ore_backup_nodes[@]}; do
     apply_each_node ${sshhop_user_name} ${pro_ext_Ore_hop} ${ec2_user_name} ${host} "${pro_ext_Ore_name}" "$@"
   done
 

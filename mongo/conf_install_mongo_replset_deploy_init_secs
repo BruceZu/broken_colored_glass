@@ -16,13 +16,11 @@ main() {
   local hu="${sshhop_user_name}"
   local nu="${ec2_user_name}"
 
-  local f="conf_install_mongod.sh"
-  local common_lib="common.sh"
-  for node in ${nodes[@]}; do
-    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${common_lib} ${nu}@${node}:/tmp/
-    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
-    echo "cd /tmp; ./$f $replset_name" | ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
+  local install_f="conf_install_mongod.sh"
+  for f in "${install_f}" "common.sh" "./common_replsets_nodes_ip.sh"; do
+    scp -o ConnectTimeout=10 -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
   done
+  echo "cd /tmp; ./$install_f" | ssh ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
 
   # Select one as primary
 
@@ -40,6 +38,9 @@ main() {
   local pop="Sure only one member in replset"
   confirm_or_exit "$pop"
   # Set higher priority to make it as a permanent primary
+  local note="Note: reconfig need restart mongod.  This may be a bug of 3.6"
+  echo -e "\n\n =============$note=============== \n\n"
+  # TODO(Bruce): double test and check the log, add restart mongod service if need
   js="\"
  conf=rs.config();
  conf.members[0].priority = 10;

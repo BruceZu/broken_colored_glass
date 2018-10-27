@@ -1,0 +1,42 @@
+#!/bin/bash
+# set -x
+source ./common.sh
+
+#############################################################
+# Diagnostic info of each nodes
+# Globals:
+#   None
+# Arguments:
+#   ssh hope user
+#   ssh hope IP
+#   EC2 user
+#   EC2 IP
+#   replset name
+# Returns:
+#   None
+#############################################################
+do_business() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  local replset_name="$5"
+  echo -e "\n\n Dignotic info on ${replset_name} : ${node}"
+  dignostic_info "${hu}" "${hop}" "${nu}" "${node}"
+}
+
+function print_usage() {
+  cat <<EOF
+    By default there is not log output for the schedled cron job case
+    with "$0 -v" enable verbose 
+EOF
+}
+
+function main() {
+  if [[ $# == 0 ]]; then
+    print_usage
+  fi
+  for_each_replst_node "$@"
+}
+
+main "$@"

@@ -15,7 +15,11 @@ EOF
 # Auto-assign public IP (Disable)
 # Protect accident termination
 # Added 3 extra volumes for Mongo data, journal and log in order
-# restricted Security group inbound
+# Security group inbound:
+#   Custom TCP Rule TCP 27017 172.31.0.0/16
+#              SSH  TCP 22    172.31.0.0/16
+#   (check with 'netstat -a | grep 27017',
+#    see https://github.com/mongodb/docs/blob/master/source/reference/mongodb-wire-protocol.txt)
 # Selected right ssh key
 #########################################################################################
 main() {
@@ -68,7 +72,7 @@ gpgkey=https://www.mongodb.org/static/pgp/server-3.6.asc" | sudo tee /etc/yum.re
   # http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
   # http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-booting-from-wrong-volume.html
 
-  echo "Storage for replset member. Not for arbitor "
+  echo "Storage"
   for d in /data /journal /log; do
     create_d_for_u_with_p $d mongod mongod 755
   done
@@ -256,9 +260,15 @@ processManagement:
 net:
   port: 27017
   bindIp: 0.0.0.0
+' | sudo tee /etc/mongod.conf
+
+  if [[ ! -z "${replset_n}" ]]; then
+    echo '
 replication:
   replSetName: "'${replset_n}'"
-' | sudo tee /etc/mongod.conf
+' >>/etc/mongod.conf
+  fi
+
   # Verify
   echo "Verify mongo YAML file  =============7==========="
   cat /etc/mongod.conf
@@ -282,6 +292,7 @@ replication:
 
 if [[ -z "$@" ]]; then
   printUsage
-  exit 0
+  echo "replset name is not provided, so will create mongo standalone instance."
 fi
 main "$@"
+echo -e "next steps:\n 1 verify from python user;\n 2 configure file;\n 3 log rotation and backup schedule;\n 4 wiki"

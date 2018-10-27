@@ -97,6 +97,8 @@ function verify_backup() {
     local command="grep -Ei 'WARN|ERROR' ${FULL_BP}/${week}/backup.log"
     # set -x
     run "${command}" "${connect}" ${grep_expected_code_of_no_result}
+    command=" ls -lh ${FULL_BP}/${week}/backup.log"
+    echo "${command}" | ${connect}
 
     # set +x
   done

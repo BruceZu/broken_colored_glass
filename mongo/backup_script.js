@@ -26,7 +26,7 @@ if (isMaster.hasOwnProperty("setName") && isMaster.ismaster) {
 }
 print("\nSecondary member");
 
-const db = db.getSiblingDB('local');
+db = db.getSiblingDB('local');
 let timeStampOfLatestOplog = db.oplog.rs.find().sort({ ts: -1 }).limit(1).next().ts;
 print("\nBefore lock, the current oplog timestamp *1*" + timeStampOfLatestOplog + "\n");
 

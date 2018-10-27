@@ -1,0 +1,187 @@
+#!/bin/bash
+source ./common_replsets_nodes_ip.sh
+source ./common.sh
+
+function upgrade_node_with_binary_file() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  local binary_name="$5"
+  local binary_sha="$6"
+  local new_version="$7"
+  local path_to_bi="$8"
+  path_to_bi="${path_to_bi:-$(pwd)}"
+
+  ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${node} ls /tmp/${binary_name}
+  if [[ $? -ne 0 ]]; then
+    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ${path_to_bi}/${binary_name} ${nu}@${node}:/tmp/
+    if [[ $? != 0 ]]; then
+      echo "Failed to copy bianry file to destination node"
+      exit 1
+    fi
+  fi
+  local common_lib="common.sh"
+  for f in "${common_lib}" "common_replsets_nodes_ip.sh"; do
+    echo "cd /tmp; if [[ ! -z ./$f ]]; then rm -f ./$f; fi" | ssh -t ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@${node}
+    scp -o ConnectTimeout=10 -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
+  done
+
+  local to_node="ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${node}"
+  ${to_node} <<EOF
+cd /tmp
+source ./${common_lib}
+upgrade_local_mongo ${binary_name} ${binary_sha} ${new_version}
+EOF
+
+}
+
+function upgrade_standalone_node_to_mongo_3_6() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  local binary_name="$5"
+  local binary_sha="$6"
+  local new_version="$7"
+
+  echo "ssh -t ${hu}@${hop} ssh ${nu}@${node}"
+  local js="\" db.adminCommand( { setFeatureCompatibilityVersion: '3.4' } ) \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}"
+
+  upgrade_node_with_binary_file "${hu}" "${hop}" "${nu}" "${node}" \
+    "${binary_name}" "${binary_sha}" "$new_version"
+
+  local js="\" db.version() \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}" | grep "$new_version"
+  stop $? "check if mongod is the expected version: $new_version"
+}
+
+function wait_expected_replset_status() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local pri="$4"
+  local ask="$5"
+
+  while true; do
+    show_replset_status "${hu}" "${hop}" "${nu}" "${pri}"
+    echo -e "\n\n$ask"
+    local is_right
+    read -p "Right?[Y/n]" is_right
+    echo "Answer: [$is_right]"
+    if [[ -z "$is_right" || "$is_right" =~ ^([yY][eE][sS]|[yY]).*$ ]]; then
+      break
+    fi
+  done
+}
+
+function upgrade_replset_to_mongo_3_6() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local pri="$4"
+  local binary_name="$5"
+  local binary_sha="$6"
+  local new_version="$7"
+
+  local input=("$@")
+  local nodes=("${input[@]:7}")
+
+  local pop="
+  ${hu}, ${hop}, ${nu}, ${pri}
+  ${binary_name}, ${binary_sha}, ${new_version}
+  Nodes: ${nodes[@]}"
+  confirm_or_exit "$pop"
+
+  local js="\" db.adminCommand( { setFeatureCompatibilityVersion: '3.4' } ) \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${pri}"
+  js="\" db.adminCommand({getParameter:1, featureCompatibilityVersion:1}) \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${pri}"
+
+  for node in ${nodes[*]}; do
+    echo "============upgrade ${hu}@${hop} ->${nu}@${node}"
+    upgrade_node_with_binary_file "${hu}" "${hop}" "${nu}" "${node}" \
+      "${binary_name}" "${binary_sha}" "$new_version"
+
+    local js="\" rs.salveOk(); db.version() \""
+    mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${node}" | grep "$new_version"
+    stop $? "check if mongod on secondary ${node} the expected version: $new_version"
+  done
+
+  js="\" rs.stepDown(90,30) \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${pri}"
+  # process see http://paste.openstack.org/show/733158/
+
+  local ask="the ${pri} has stepped down and another member has assumed PRIMARY state?"
+  wait_expected_replset_status "${hu}" "${hop}" "${nu}" "${pri}" "${ask}"
+
+  upgrade_node_with_binary_file "${hu}" "${hop}" "${nu}" "${pri}" \
+    "${binary_name}" "${binary_sha}" "$new_version"
+  local js="\" db.version() \""
+  mongo_eval "$js" "${hu}" "${hop}" "${nu}" "${pri}" | grep "$new_version"
+  stop $? "check if mongod on primary ${pri} the expected version: $new_version"
+
+  ask="the ${pri} has back to PRIMARY state?"
+  wait_expected_replset_status "${hu}" "${hop}" "${nu}" "${pri}" "${ask}"
+}
+
+function main() {
+  local binary_name="mongodb-linux-x86_64-amazon-v3.6-latest.tgz"
+  local binary_sha="9fbbaf6d01433e0a8083cf833bb07d2e9a4987f0"
+  local new_version="3.6.8"
+
+  echo "upgrade ${dev_single_N_Calif_name}"
+  upgrade_standalone_node_to_mongo_3_6 "${sshhop_user_name}" "${dev_N_Calif_hop}" \
+    "${ec2_user_name}" "${dev_single_N_Calif}" \
+    "${binary_name}" "${binary_sha}" "$new_version"
+
+  echo "upgrade ${dev_both_name}"
+  upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${dev_both_Ore_hop}" \
+    "${ec2_user_name}" "${dev_both_Ore_2a_pri}" \
+    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${dev_both_Ore_2b}" "${dev_both_Ore_2c_new}"
+
+  echo "upgrade ${pro_ext_Ore_name}"
+  upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${pro_ext_Ore_hop}" \
+    "${ec2_user_name}" "${pro_ext_Ore_2c_pri}" \
+    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${pro_ext_Ore_2b}" "${pro_ext_Ore_2a}"
+
+  echo "upgrade ${pro_ext_N_Calif_name}"
+  upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${pro_ext_N_Calif_hop}" \
+    "${ec2_user_name}" "${pro_ext_N_Calif_1b_pri_new}" \
+    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${pro_ext_N_Calif_1a}" "${pro_ext_N_Calif_1a_new}"
+}
+
+#############################################################
+# Upgrade mongo instances 3.4 to 3.6 with binary
+# According to
+#   https://docs.mongodb.com/manual/release-notes/3.6-upgrade-standalone/
+#   https://docs.mongodb.com/manual/release-notes/3.6-upgrade-replica-set/
+# Order
+#   For replset instances:
+#     1 secondary instances firstly;
+#     2 check status: wait all SECs become \"SECONDARY\" status
+#     3 primary
+#   For standalone instance
+# Actions for each node:
+#   1 update compatibility
+#     For replset:
+#       on the primary. A majority of the data-bearing members must be available:
+#       db.adminCommand( { setFeatureCompatibilityVersion: "3.4" } )
+#     For standalone:
+#       db.adminCommand( { setFeatureCompatibilityVersion: "3.4" } )
+#   2 configure file:
+#       backup;
+#       explicitly set net.bindIp to 0.0.0.0
+#
+#   3 replace binary
+#       check file integration
+#       check unpack result
+#       stop mongod
+#       replace binary files
+#       start mongod
+#############################################################
+main "$@"

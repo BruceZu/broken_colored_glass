@@ -27,11 +27,11 @@ function do_business() {
     return 1
   fi
 
-  declare -r common_lib="common.sh"
-  declare -r nodes_lib="common_replsets_nodes_ip.sh"
-  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${nodes_lib} ${nu}@${node}:/tmp/
-  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./${common_lib} ${nu}@${node}:/tmp/
-  scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$f ${nu}@${node}:/tmp/
+  for i in "common.sh" "common_replsets_nodes_ip.sh" "$f"; do
+    echo "cd /tmp; rm ./$i" | ssh -t ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
+    scp -o ProxyCommand="ssh -W %h:%p ${hu}@${hop}" ./$i ${nu}@${node}:/tmp/
+  done
+
   echo "cd /tmp; ./$f " | ssh -t ${hu}@$hop ssh -o StrictHostKeyChecking=no ${nu}@$node
 }
 
