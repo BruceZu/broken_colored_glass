@@ -7,7 +7,9 @@
 
 Includes 
 
-- Install Mongo replset (with arbiter or not)
+- Install Mongo replset (with arbiter or not), standalone instance.
 - Enable `mongod.log` rotation with Linux logrotate 
 - Backup and restore to point in time with `mongodump` and `mongorestore`
-
+- Backup monitor
+- Replset status diagnose
+- Upgrade 3.4 to 3.6
