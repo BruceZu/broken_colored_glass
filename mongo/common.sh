@@ -33,6 +33,18 @@ function run() {
   return 0
   #set +x
 }
+function rm_backup_cron_job_from_new_primary() {
+  local hu=$1
+  local hop=$2
+  local nu=$3
+  local new_pri=$4
+  
+
+  local to_new_pri="ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${new_pri}"
+  echo "sudo rm -rf  ${EC2_CRON_P}/${nu}" | ${to_new_pri}
+  echo "sudo ls ${EC2_CRON_P}" | ${to_new_pri}
+  echo "crontab -l" | ${to_new_pri}
+}
 
 function rm_backup_cron_job_from_new_primary() {
   local hu=$1
@@ -315,9 +327,9 @@ function mongo_eval() {
   local hop="$3"
   local nu="$4"
   local node="$5"
-  # set -x
+   
   echo "mongo --eval $js" | ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${node}
-  # set +x
+    
 }
 
 function show_replset_config() {
@@ -432,7 +444,7 @@ function apply_each_node() {
   local connect="ssh ${1}@${2} ssh -o StrictHostKeyChecking=no ${3}@${4} 2>/dev/null"
   local node="$4"
   local replset_name="$5"
-  echo -e "------------------------------\n${replset_name}\n${node}:\n"
+  echo -e "------------------------------\nreplset_name: ${replset_name}\nnode: ${node}\n"
   timeout 5 ${connect} date
   if [[ $? != 0 ]]; then
     err "\n timeout: $connect  \n"
@@ -526,5 +538,14 @@ function for_2_sec_per_replst() {
   # "product - extender beta - N. California"
   for host in ${pro_ext_N_Calif_1a} ${pro_ext_N_Calif_1a_new}; do
     apply_each_node ${sshhop_user_name} ${pro_ext_N_Calif_hop} ${ec2_user_name} ${host} "${pro_ext_N_Calif_name}" "$@"
+  done
+}
+
+function for_master_per_replst() {
+  caller 0
+  env_check
+
+  for ((i = 0; i < ${#hops[@]}; i++)); do
+    apply_each_node "${sshhop_user_name}" "${hops[$i]}" "${ec2_user_name}" "${pris[$i]}" "${names[$i]}" "$@"
   done
 }

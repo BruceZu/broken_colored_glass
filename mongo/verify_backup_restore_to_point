@@ -1,0 +1,157 @@
+#!/bin/bash
+#set -x
+source ./common.sh
+#################################################
+# Test backup and restore to a point in time with a scenario as
+#   1> on primary: create 2 documents: A and B
+#   2> on secondary: backup
+#   3> on primary: delete A, update B, create C
+#   4> record the point in time: Ｐ used for restore
+#   5> on primary: delete B and C
+#   6> local: restore to　point in time: Ｐ
+# Globals:
+#   sshhop_user_name
+#   pro_ext_N_Calif_hop
+#   ec2_user_name
+#   pro_ext_N_Calif_1a_new
+#   pro_ext_N_Calif_1b_pri_new
+#
+# Arguments:
+#   [ <sshop user>
+#     <sshop IP>
+#     <EC2 user>
+#     <secondary member IP>
+#     <primary member IP>
+#   ]
+# Returns:
+#   None
+# Note!  this script is not finished yet
+#################################################
+
+function test() {
+  local hu="$1"
+  local hop="$2"
+  local eu="$3"
+  local sec="$4"
+  local pri="$5"
+  # 1> on primary: create 2 documents: A and
+  local js="\" 
+  db=db.getSiblingDB('test'); 
+  db.dropDatabase();
+  try {
+    db.bybzu.insertOne( { item: 'A' } );
+    db.bybzu.insertOne( { item: 'B' } );
+  } catch (e) {
+    print (e);
+  };
+  db.bybzu.find().forEach(function(d){ 
+    print(d._id.str)  
+  })
+   \""
+
+  local ids=$(mongo_eval "$js" "${hu}" "${hop}" "${eu}" "${pri}")
+  ids=($(echo -e "$ids" | sed -n '4,$p' | tr "\n" " "))
+  # 2> on secondary: backup
+  js="\" 
+  rs.slaveOk();
+  db=db.getSiblingDB('test'); 
+  db.bybzu.find().forEach(function(d){ 
+    print(d._id.str)  
+  });
+   \""
+
+  local ids_from_sec
+  while true; do
+    ids_from_sec=$(mongo_eval "$js" "${hu}" "${hop}" "${eu}" "${sec}")
+    if [[ ! -z ${ids_from_sec} ]]; then
+      echo "data synced to secondary"
+      ids_from_sec=($(echo -e "$ids_from_sec" | sed -n '4,$p' | tr "\n" " "))
+      if [[ -z $(echo "${ids[@]}" "${ids_from_sec[@]}" | tr ' ' '\n' | sort | uniq -u) ]]; then
+        break
+      else
+        echo "data in seconary is not same as primary"
+        exit 1
+      fi
+    fi
+    echo "wait data sync to secondary and try "
+    sleep 2
+  done
+
+  echo -e "${ids[@]}\n${ids_from_sec[@]}"
+  declare -r to_sec="ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${eu}@${sec}"
+
+  local time_before_backup=$(${to_sec} date +"%s")
+  time_before_backup="${time_before_backup%[$'\r\n\t']}"
+
+  local week=$(${to_sec} date +%u)
+  week="${week%[$'\r\n\t']}"
+  declare -i b_stat_t=$(date +%s)
+  ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${eu}@${sec} ${EC2_BACKUP_F_PATH}/${SHELL_F} &
+  processing_of $! "backup is underworking "
+  declare -i b_end_t=$(date +%s)
+  echo "Backup used $(($b_end_t - $b_stat_t)) sec"
+
+  declare -r full_backup_log="${FULL_BP}/week_${week}/backup.log"
+  local backup_time=$(${to_sec} stat -c "%Z" ${full_backup_log})
+  backup_time="${backup_time%[$'\r\n\t']}"
+
+  if [[ $backup_time -gt $time_before_backup ]]; then
+    declare -r c_check_log="grep -Ei \"ERROR|WARN\" ${full_backup_log}"
+    run "${c_check_log}" "${to_sec}" ${GREP_NO_FOUND_CODE}
+    stop $? "Check backup oplog log"
+    echo "backup  successful"
+  else
+    echo -e "
+     time before backup:${time_before_backup} 
+           back up time:${backup_time}"
+    err "Failed full backup"
+    exit 1
+  fi
+
+  # 3> on primary: delete A, update B, create C
+
+  js="\" 
+  db=db.getSiblingDB('test'); 
+  try {
+    db.bybzu.deleteOne({item: 'A'})
+    db.bybzu.findAndModify({query:{item: {$eq: 'B'}}, update:{item:'UB'}})
+    db.bybzu.insertOne( { item: 'C' } );
+  } catch (e) {
+    print (e);
+  };
+  db.bybzu.find().forEach(function(d){ 
+    print(d.d.item)  
+  })
+   \""
+  mongo_eval "$js" "${hu}" "${hop}" "${eu}" "${pri}"
+
+  # 4> record the point in time: Ｐ used for restore
+
+  # 5> on primary: delete B and C
+  js="\" db=db.getSiblingDB('test'); 
+  db.dropDatabase();
+   \""
+  mongo_eval "$js" "${hu}" "${hop}" "${eu}" "${pri}"
+  # 6> local: restore to　point in time: Ｐ
+
+}
+
+function print_usage() {
+  cat <<EOF
+    By default use replset "product - extender beta - N. California" for test
+    Switch to other replset for test:
+     "$0 <sshop user> <sshop IP> <EC2 user> <secondary member IP> <primary member IP>"  
+    Note: the secondary member and primary member should be in the same replset
+EOF
+}
+
+function main() {
+  if [[ $# == 0 ]]; then
+    print_usage
+    test "${sshhop_user_name}" "${pro_ext_N_Calif_hop}" "${ec2_user_name}" "${pro_ext_N_Calif_1a_new}" "${pro_ext_N_Calif_1b_pri_new}"
+  else
+    test "$@"
+  fi
+}
+
+main "$@"

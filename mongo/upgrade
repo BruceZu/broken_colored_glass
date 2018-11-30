@@ -144,24 +144,24 @@ function main() {
   echo "upgrade ${dev_single_N_Calif_name}"
   upgrade_standalone_node_to_mongo_3_6 "${sshhop_user_name}" "${dev_N_Calif_hop}" \
     "${ec2_user_name}" "${dev_single_N_Calif}" \
-    "${binary_name}" "${binary_sha}" "$new_version"
+    "${binary_name}" "${binary_sha1}" "$new_version"
 
   echo "upgrade ${dev_both_name}"
   upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${dev_both_Ore_hop}" \
     "${ec2_user_name}" "${dev_both_Ore_2a_pri}" \
-    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${binary_name}" "${binary_sha1}" "$new_version" \
     "${dev_both_Ore_2b}" "${dev_both_Ore_2c_new}"
 
   echo "upgrade ${pro_ext_Ore_name}"
   upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${pro_ext_Ore_hop}" \
     "${ec2_user_name}" "${pro_ext_Ore_2c_pri}" \
-    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${binary_name}" "${binary_sha1}" "$new_version" \
     "${pro_ext_Ore_2b}" "${pro_ext_Ore_2a}"
 
   echo "upgrade ${pro_ext_N_Calif_name}"
   upgrade_replset_to_mongo_3_6 "${sshhop_user_name}" "${pro_ext_N_Calif_hop}" \
     "${ec2_user_name}" "${pro_ext_N_Calif_1b_pri_new}" \
-    "${binary_name}" "${binary_sha}" "$new_version" \
+    "${binary_name}" "${binary_sha1}" "$new_version" \
     "${pro_ext_N_Calif_1a}" "${pro_ext_N_Calif_1a_new}"
 
   rm -f "${binary_name}"

@@ -1,0 +1,55 @@
+#!/bin/bash
+
+source ./common.sh
+function update_write_concern_w_of_replset() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  ## Update default value of write concern to be 'majority'
+  local check_js="\"printjson(rs.conf().settings.getLastErrorDefaults)\""
+  local update_js="\"cfg = rs.conf(); cfg.settings.getLastErrorDefaults = { w: 'majority', wtimeout: 0 }; rs.reconfig(cfg) \""
+  mongo_eval "${check_js}" "${hu}" "${hop}" "${nu}" "${node}"
+  mongo_eval "${update_js}" "${hu}" "${hop}" "${nu}" "${node}"
+  mongo_eval "${check_js}" "${hu}" "${hop}" "${nu}" "${node}"
+}
+
+function check_read_concern_majority_support_of_replset() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  ## Update replication configuration 'replication.enableMajorityReadConcern' to be true
+  # check the if it is supported by the current engine
+  local check_js="\"db.runCommand( { serverStatus: 1, repl: 0, metrics: 0, locks: 0 , rangeDeleter: 0, wiredTiger: 0, tcmalloc: 0, network: 0, logicalSessionRecordCache: 0} ).storageEngine.supportsCommittedReads\""
+
+  mongo_eval "${check_js}" "${hu}" "${hop}" "${nu}" "${node}"
+
+  # From 3.6.1 the default value of replication configuration 'replication.enableMajorityReadConcern': True.
+  # MongoDB enables support for "majority" read concern by default."
+  local to_pri="ssh -t ${hu}@${hop} ssh -o StrictHostKeyChecking=no ${nu}@${new_pri}"
+  local update_cmd="" # /etc/mongod.conf
+  echo "${update_cmd}" | ${to_pri}
+}
+
+function do_business() {
+  local hu="$1"
+  local hop="$2"
+  local nu="$3"
+  local node="$4"
+  local replset_name="$5"
+  echo "Maintain ${node} of ${replset_name}"
+  update_write_concern_w_of_replset "${hu}" "${hop}" "${nu}" "${node}"
+  check_read_concern_majority_support_of_replset "${hu}" "${hop}" "${nu}" "${node}"
+}
+
+function main() {
+  env_check
+  for_master_per_replst "$@"
+
+  sleep 2
+  # echo -e "\n\n Done, check the replsets status:"
+  # each_replsets_primary_and_status
+}
+
+main "$@"
