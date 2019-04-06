@@ -35,7 +35,7 @@ public class JsonParser {
    * reference  https://blog.takipi.com/the-ultimate-json-library-json-simple-vs-gson-vs-jackson-vs-json/
    * @param jsonStr Json string. If the jsonStr is not valid Json string, throw JsonSyntaxException
    */
-  public static JsonElement parse(String jsonStr, final FPCFunction<String> function) {
+  public static JsonElement parse(String jsonStr, final PROJFunction<String> function) {
     boolean isEmpty = true;
     JsonElement tree;
     try (JsonReader reader = new JsonReader(new StringReader(jsonStr))) {

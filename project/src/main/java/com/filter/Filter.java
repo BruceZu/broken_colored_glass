@@ -49,11 +49,11 @@ public class Filter implements Filter {
       Charset charset = Charset.forName(response.getCharacterEncoding());
       String responseContent = new String(conentInBytes, charset);
 
-      // fpc has cases where content type is declared as application/json
+      // proj has cases where content type is declared as application/json
       // but in fact content is not json .
       if (!responseContent.isEmpty()
           && (responseContent.startsWith("[") || responseContent.startsWith("{"))) {
-        JsonElement parsed = FPCJsonParser.parse(responseContent, ESCAPE_FUNCTION);
+        JsonElement parsed = PROJJsonParser.parse(responseContent, ESCAPE_FUNCTION);
         if (parsed.isJsonObject()
             && parsed.getAsJsonObject().keySet().contains(JSONOBJECT_KEY_FOR_JQURY_DATA_TABLE)) {
           // Only escape Json string used by front end Jquery datatable and when there is Javascript

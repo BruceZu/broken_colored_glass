@@ -74,7 +74,7 @@ public class FindURLHandler {
     // This can only be used for local debug and test purpose.
     // Not available for released VM due to security concern.
     try (Stream<String> stream = Files.lines(Paths.get("/etc/prod_type.txt"))) {
-      this.isRunningInVM = stream.findFirst().equals("FPC");
+      this.isRunningInVM = stream.findFirst().equals("PROJ");
     } catch (Exception e) {
       this.isRunningInVM = false;
     }
@@ -100,7 +100,7 @@ public class FindURLHandler {
     if (unescapedPattern == null)
       r.add(
           "The value of parameter 'p' (pattern) is null or not recognizable. So display all information."
-              + " It should be like http://localhost:8080/fpc/tool/req_maps?p=.*log.*");
+              + " It should be like http://localhost:8080/proj/tool/req_maps?p=.*log.*");
     r.addAll(handlersInfoOf(pattern, (url, p) -> Pattern.compile(p).matcher(url).matches()));
     return r;
   }

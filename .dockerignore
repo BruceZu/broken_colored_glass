@@ -1,2 +1,9 @@
+./project/backgroundapp
+./project/build.xml
+./project/outservice
+./project/wireless
+./project/Makefile
+./project/monitor
 ./project/README
 ./project/toolchains.xml.example
+./project/scripts

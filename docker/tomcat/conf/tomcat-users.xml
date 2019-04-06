@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tomcat-users xmlns="http://tomcat.apache.org/xml" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd" 
+	version="1.0">
+	<role rolename="manager-script" />
+	<user username="projadmin" 
+		password="046ed5f485431c63$1000$63da3a538f1f15aea922875fd1e2c5645629ff3d24997bb3f978ad2538921168" 
+		roles="manager-script" />
+</tomcat-users>

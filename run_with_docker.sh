@@ -1,6 +1,7 @@
 #!/bin/sh
+SCRIPT=$(perl -e 'use Cwd "abs_path"; print abs_path(shift)' $0)
 from=$(pwd)
-cd "$(dirname $(readlink -nf "$0"))"
+cd "$(dirname $SCRIPT)"
 ./open-login-page.sh &
-docker-compose stop && docker-compose up
+docker-compose down && docker-compose up
 cd $from

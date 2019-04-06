@@ -1,0 +1,26 @@
+version: "3.4"
+
+services:
+    mysql:
+        build:
+            context: .
+            dockerfile: docker/release/mysql/Dockerfile
+        image: proj_mysql:latest
+        ports:
+            - "3307:3306"
+        environment:
+            MYSQL_ROOT_PASSWORD: "root"
+        volumes:
+            - proj_mysql_data_3307:/var/lib/mysql
+    proj:
+        build:
+            context: .
+            target: release
+            dockerfile: docker/release/Dockerfile
+        image: proj_release:latest
+        ports:
+            - "0.0.0.0:8444:443"
+
+volumes:
+    proj_mysql_data_3307:
+        driver: local

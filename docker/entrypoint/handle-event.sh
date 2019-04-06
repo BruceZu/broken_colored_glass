@@ -1,4 +1,5 @@
 #!/bin/bash
+source /entrypoint/common.sh
 UNDER_WRITE=/tmp/events.txt
 UNDER_FILTER=/tmp/events_under_filter.txt
 UNDER_HANDLE=/tmp/events_under_handle.txt
@@ -7,17 +8,14 @@ POM=/project/pom.xml
 
 JAVA_BASE=/project/src/main/java
 RESOURCES_BASE=/project/src/main/resources/
-RESOURCES_TARGET_PATH=/project/target/fpc/WEB-INF/classes/
+RESOURCES_TARGET_PATH=/project/target/proj/WEB-INF/classes/
 WEBAPP_BASE=/project/src/main/webapp/
-WEBAPP_TARGET_PATH=/project/target/fpc/
+WEBAPP_TARGET_PATH=/project/target/proj/
 
 MESSAGES_CONVERT_SHELL=/project/utils/convert_messages.sh
 MESSAGES_JS_FILES=/project/src/main/webapp/resources/vue/resources/messages_*.js
-MESSAGES_JS_FILES_TARGET_PATH=/project/target/fpc/resources/vue/resources/
+MESSAGES_JS_FILES_TARGET_PATH=/project/target/proj/resources/vue/resources/
 
-debug_log() {
-  echo "==== $1 ===="
-}
 copy() {
   dir=$1
   file=$2
@@ -59,16 +57,19 @@ while true; do
 
   if [ $java_changed = true ] && [ $mv_happened = false ]; then
     debug_log "event on java file only"
-    mvn compiler:compile -Dmaven.compiler.useIncrementalCompilation=false war:exploded -f $POM
+    mvn compiler:compile -Dmaven.compiler.useIncrementalCompilation=false war:exploded -f $POM && \
+    cp /tomcat/webapps/proj/WEB-INF/classes/database.properties /project/target/proj/WEB-INF/classes/
     continue
   elif [ $java_changed = false ] && [ $mv_happened = true ]; then
     debug_log "MOVE event on non-java file"
-    mvn resources:resources war:exploded -f $POM
+    mvn resources:resources war:exploded -f $POM && \
+    cp /tomcat/webapps/proj/WEB-INF/classes/database.properties /project/target/proj/WEB-INF/classes/
     continue
   elif [ $java_changed = true ] && [ $mv_happened = true ]; then
     debug_log "MOVE event and event on java file"
     # no matter java file is moved of not
-    mvn compiler:compile -Dmaven.compiler.useIncrementalCompilation=false resources:resources war:exploded -f $POM
+    mvn compiler:compile -Dmaven.compiler.useIncrementalCompilation=false resources:resources war:exploded -f $POM && \
+    cp /tomcat/webapps/proj/WEB-INF/classes/database.properties /project/target/proj/WEB-INF/classes/
     continue
   fi
   # Todo:

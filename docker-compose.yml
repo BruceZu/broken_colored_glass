@@ -2,30 +2,40 @@ version: "3"
 
 services:
     mysql:
-        image: mysql:5.5
+        image: mysql:5.7
         ports:
             - "3307:3306"
         environment:
             MYSQL_ROOT_PASSWORD: "root"
         volumes:
             - mysql_data_3307:/var/lib/mysql
+            - ./docker/mysql/etc/mysql/my.cnf:/etc/mysql/my.cnf
     tomcat:
         build:
             context: .
             dockerfile: docker/Dockerfile
         ports:
             - "8081:8080"
-            - "8444:8443"
+            - "8444:443"
         volumes:
             - maven_repository:/root/.m2/repository
+            - node_npm_dir:/root/.nvm
+            - ./docker/maven/settings.xml:/root/.m2/settings.xml
             - ./project:/project
             - ./docker/entrypoint/start-tomcat.sh:/entrypoint/start-tomcat.sh
             - ./docker/entrypoint/monitor-event.sh:/entrypoint/monitor-event.sh
             - ./docker/entrypoint/write-event.sh:/entrypoint/write-event.sh
             - ./docker/entrypoint/handle-event.sh:/entrypoint/handle-event.sh
-            - /tmp/fpc_docker_tmp/:/tmp/
+            - ./docker/entrypoint/common.sh:/entrypoint/common.sh
+            - /tmp/proj_docker_tmp/:/tmp/
+            - dbm_shit:/dbm/shit
+            - ./docker/tomcat/util/proj/label.conf:/var/tomcat/util/proj/label.conf
 volumes:
     mysql_data_3307:
         driver: local
     maven_repository:
+        driver: local
+    node_npm_dir:
+        driver: local
+    dbm_shit:
         driver: local

@@ -1,0 +1,18 @@
+<settings>
+	<servers>
+		<server>
+			<id>com.coustomer.commons.trashy.repo</id>
+			<configuration>
+				<httpHeaders>
+					<property>
+						<!-- The Token name, not case-sensitive, is kept for GitLab
+						see https://docs.gitlab.com/ee/api/README.html#personal-access-tokens -->
+						<name>Private-Token</name>
+						<!-- Only change token value with your token -->
+						<value>9koXpg98eAheJpvBs5tK</value>
+					</property>
+				</httpHeaders>
+			</configuration>
+		</server>
+	</servers>
+</settings>

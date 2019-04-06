@@ -118,7 +118,7 @@ public abstract class AbstractAuthenticationUpdateSessionManager
   }
 
   static class Security {
-    protected static final String NAME = "fpcAuthenticationUpdateSessionManagerImp";
+    protected static final String NAME = "projAuthenticationUpdateSessionManagerImp";
     protected static final String PROFIX =
         "org.springframework.security.web.authentication.session"
             + ".CompositeSessionAuthenticationStrategy";
@@ -128,7 +128,7 @@ public abstract class AbstractAuthenticationUpdateSessionManager
   @Conditional(value = NoSAMLSecurityCondition.class)
   static class NoSAMLSecurity extends Security {
     @Bean(NAME)
-    public FpcAuthenticationUpdateSessionManager get() {
+    public PrjAuthenticationUpdateSessionManager get() {
       return new AbstractAuthenticationUpdateSessionManager() {
         @Override
         @Autowired
@@ -146,7 +146,7 @@ public abstract class AbstractAuthenticationUpdateSessionManager
   @Conditional(value = SAMLSecurityCondition.class)
   static class SAMLSecurity extends Security {
     @Bean(NAME)
-    public FpcAuthenticationUpdateSessionManager get() {
+    public PrjAuthenticationUpdateSessionManager get() {
       return new AbstractAuthenticationUpdateSessionManager() {
         @Override
         @Autowired

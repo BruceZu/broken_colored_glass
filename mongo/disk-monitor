@@ -1,7 +1,7 @@
 #!/bin/bash
 # set -x
 source ./common.sh
-readonly MAIL_TO=bzu@fortinet.com
+readonly MAIL_TO=bzu@compnet.com
 
 #############################################################
 # Monitore physical disk space used by Mongo replset members
