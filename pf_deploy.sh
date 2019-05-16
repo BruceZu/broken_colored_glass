@@ -3,7 +3,7 @@
 # Test with:
 #   sshpass -p 'admin123'  ssh -o "StrictHostKeyChecking no" -o "IdentitiesOnly=yes" admin@167.188.21.37
 #   images is fetche from ${IM_SERVER_USER}@${IM_SERVER}. TODO: fetch them from registeryserver.
-set -x
+set -eu
 
 function deploy() {
     local I=$(readlink -f $0)
@@ -12,68 +12,86 @@ function deploy() {
 
     local PF_HOME=/var/pf_home
 
-    # persistant tmp path used by docker compose
+    echo "# set persistant tmp path used by docker compose in BPJ VM"
     local TMP=/var/tmp/docker_compose_pf
     rm -rf ${TMP}/*
     mkdir -p ${TMP}
     export TMPDIR=${TMP}
 
-    # old process: kill
-    docker-compose -f ${PF_HOME}/${YAML} -f ${PF_HOME}/${YAML_VM} down
+    echo "# old process: kill"
+    if [[ -f ${PF_HOME}/${YAML} ]]; then
+        docker-compose -f ${PF_HOME}/${YAML} -f ${PF_HOME}/${YAML_VM} down
+    fi
     local IDs=$(ps | grep -E "${YAML_VM}" | grep -v "grep" | awk '{print $1}')
     if [ ! -z "$IDs" ]; then
         echo "$IDs" | xargs kill -9
     fi
 
-    local parameter="$(echo -e "$2" | tr -d '[:space:]')"
+    local parameter="$(echo -e "${1:-}" | tr -d '[:space:]')"
     if [[ "$parameter" == "-s" || "$parameter" == "--stop" ]]; then
         echo "down."
         exit
     fi
 
-    if [[ "$parameter" == "-n" || "$parameter" == "--no-fetch" ]]; then
-        echo "Fetch images ..."
-        # container : cleanps
-        containers=$(docker ps -a | grep -E "$PREFIX" | awk '{print $1}')
-        for c in ${containers}; do
-            docker stop $c
-            docker rm $c
-        done
+    echo "# container: cleaning "
+    containers=$(docker ps -a | grep -E "$A|$B|$C|$D|$E" | awk '{print $1}')
+    for c in ${containers}; do
+        docker stop $c
+        docker rm $c
+    done
 
-        # images: clean
-        docker images | grep -E "$A|$B|$C|$D|$E" | awk '{print $3}' | xargs docker rmi
+    if [[ "$parameter" != "-no" && "$parameter" != "--no-fetch" ]]; then
+        echo "# images: cleaning"
+        for i in $(docker images | grep -E "$A|$B|$C|$D|$E" | awk '{print $3}'); do
+            if [[ "$i" != "IMAGE" ]]; then
+                echo "removing image $i"
+                docker rmi $i
+            fi
+        done
 
         # network and volume
 
-        # clean local
-        rm -rf "${PF_HOME}"
+        echo "# cleaning local tar balls"
+        if [[ -d ${PF_HOME} ]]; then
+            rm -rf "${PF_HOME}"
+        fi
         mkdir -p "$PF_HOME"
 
-        # scp
+        echo "# fetching docker images"
         # create knowhost
-        sshpass -p ${IM_SERVER_PASS} ssh -o "StrictHostKeyChecking no" ${IM_SERVER_USER}@${IM_SERVER} ls &
-        wait &&
-            sshpass -p ${IM_SERVER_PASS} scp ${IM_SERVER_USER}@${IM_SERVER}:"${HOME_ON_HOP}"/* "${PF_HOME}"/ &
+        sshpass -p ${IM_SERVER_PASS} ssh -o "StrictHostKeyChecking no" ${IM_SERVER_USER}@${IM_SERVER} ls -lh ${HOME_ON_HOP} &
         wait
-        md5sum "${PF_HOME}"/saved*.tar "${PF_HOME}"/"${FILES_TAR}" &&
-            tar xvzf "$PF_HOME/$FILES_TAR" -C "$PF_HOME"/ &&
-            local IM_ID &&
-            for ((i = 0; i < ${#SAVED[@]}; i++)); do
-                docker load -i "${PF_HOME}"/${SAVED[i]}
-                IM_ID=$(docker images | grep none | awk '{ print $3 }')
-                if [ ! -z $IM_ID ]; then
-                    docker tag $IM_ID ${IM[i]}:${TAG[i]}
-                fi
-            done &
+        echo "will fetch the listed image .... need wait with patient."
+        sshpass -p ${IM_SERVER_PASS} scp ${IM_SERVER_USER}@${IM_SERVER}:"${HOME_ON_HOP}"/* "${PF_HOME}"/ &
         wait
+        echo -e "# verify integratioin:\n## original md5sum"
+        cat "${PF_HOME}/${md5sums}"
+        echo "## after fetch, local md5sum:"
+        md5sum "${PF_HOME}"/saved*.tar "${PF_HOME}"/"${FILES_TAR}"
+        echo "# load and tag images"
+        tar -xzf "$PF_HOME/$FILES_TAR" -C "$PF_HOME"/
+        local IM_ID
+        for ((i = 0; i < ${#SAVED[@]}; i++)); do
+            docker load -i "${PF_HOME}"/${SAVED[i]}
+            IM_ID=$(docker images | grep none | awk '{ print $3 }')
+            if [ ! -z $IM_ID ]; then
+                docker tag $IM_ID ${IM[i]}:${TAG[i]}
+            fi
+        done &
+        wait
+    else
+        echo "# not fetch images"
     fi
-    # starts up
-    rm nohup.out
-    nohup docker-compose -f ${PF_HOME}/${YAML} -f ${PF_HOME}/${YAML_VM} up >/dev/null 2>&1 &
+    echo "# starts up"
+    if [[ -f nohup.out ]]; then
+        rm nohup.out
+    fi
+    nohup docker-compose -f ${PF_HOME}/${YAML} -f ${PF_HOME}/${YAML_VM} up &
+    echo "Success deployed with version $(cat ${PF_HOME}/$version)"
 }
 
 function usage() {
-    echo -e "$0 [[-n | --no-fetch] | [-h | --help] | [-s | --stop]]
+    echo -e "$0 [[-no | --no-fetch] | [-h | --help] | [-s | --stop]]
     default: fetch Platform docker images latest version and start Platform
         -h --help: usage.
         -n --no-fetch: not fetch images, still use exiting one.
@@ -82,24 +100,31 @@ function usage() {
 }
 
 # main
+if [[ $# -gt 1 ]]; then
+    echo "Too many arguments"
+    exit 1
+elif [[ $# -eq 0 ]]; then
+    deploy
 
-if [[ $# -eq 0 ]]; then
-    deploy $@
 else
-    while [ "$1" != "" ]; do
-        case $1 in
-        -n | --no-fetch | -s | --stop)
-            deploy "$0" "$1"
-            exit
-            ;;
-        -h | --help)
-            usage
-            exit
-            ;;
-        *)
-            usage
-            exit
-            ;;
-        esac
-    done
+    arg=$(echo $1)
+    echo "$0 $@"
+    case $arg in
+    -h | --help)
+        usage
+        exit
+        ;;
+    -s | --stop)
+        deploy $1
+        exit
+        ;;
+    -no | --no-fetch)
+        deploy $1
+        exit
+        ;;
+    *)
+        usage
+        exit
+        ;;
+    esac
 fi

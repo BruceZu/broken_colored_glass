@@ -13,6 +13,14 @@ HOME_ON_HOP=/tmp/proj
 
 VOLUME_PROJ_MYSQL_KEY=proj_mysql_data_3307
 
-IM_SERVER=188.199.34.21
-IM_SERVER_USER=v
-IM_SERVER_PASS='thispassword'
+registry_file="/tmp/registry.txt"
+# Registry server info which is not keped in Git
+if [[ -f "$registry_file" ]]; then
+    source $registry_file
+else
+    echo -e "please provide docker image registry server info in the /tmp/registry.txt. Example:\n
+ IM_SERVER=188.199.34.21\n
+ IM_SERVER_USER=tom\n
+ IM_SERVER_PASS='1234qqq'"
+    exit 1
+fi

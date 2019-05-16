@@ -1,9 +1,9 @@
 #!/bin/bash
-PREFIX="compcloud_"
+PREFIX="compnet_cloud_"
 A="${PREFIX}sockstunnel"
 B="${PREFIX}portal"
 C="${PREFIX}worker"
-D="${PREFIX}cloud_base"
+D="compcloud_cloud_base"
 E="${PREFIX}logstash"
 IM=("$A" "$B" "$C" "$D" "$E")
 
@@ -25,8 +25,18 @@ FILES_TAR="files.tar.gz"
 YAML=docker-compose.yml
 YAML_VM=docker-compose-managerapp-vm.yml
 
+md5sums=md5sum.txt
+version=version.txt
+
 HOME_ON_HOP=/tmp/cloud_home
 
-IM_SERVER=188.199.34.21
-IM_SERVER_USER=v
-IM_SERVER_PASS='thispassword'
+registry=/tmp/registry.txt
+if [[ -f $registry ]]; then
+    source $registry
+else
+    echo -e "pleas provide the registry server info in $registry which looks like\n
+IM_SERVER=10.106.6.37\n
+IM_SERVER_USER=tom\n
+IM_SERVER_PASS='password'"
+    exit 1
+fi
