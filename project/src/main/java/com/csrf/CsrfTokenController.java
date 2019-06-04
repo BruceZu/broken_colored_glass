@@ -20,8 +20,31 @@ import org.springframework.web.context.request.NativeWebRequest;
 @RestController
 public class CsrfTokenController {
   private static Logger log = LogManager.getLogger(CsrfTokenController.class.getName());
-  private static final String IS_CSRF_TOKEN_RETURNED_MARK = "login_user_got_the_token";
+
   private AuthenticationTrustResolver resolver = null;
+
+  /**
+   * <pre>
+   * Add a bar for CSRF attacker trying to get CSRF token even
+   * the session in cookie can compromise.
+   * Require custom request header 'Fpc_Cors_Req_Refligh'.
+   * It is designed to let CORS supported browsers issue an
+   * option preflighted request. Then Spring rejects it with
+   * the default configuration. Without CORS it is not possible
+   * to add 'Fpc_Cors_Req_Refligh' to a cross domain XHR request.
+   * So with checking it the server knows: The request
+   * - The request is not from an attacker's domain attempting
+   *   to make a request on behalf of the user with JavaScript.
+   * - The request is not from a regular HTML form, of which it
+   *   is harder to verify it is not cross domain without the use
+   *   of CSRF token.
+   * @see {@link org.springframework.web.cors.DefaultCorsProcessor}.
+   * @see <a href=
+   * 'https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#Preflighted_requests'>Preflighted requests</a>
+   */
+  public static boolean withRequiredRequestHead(HttpServletRequest request) {
+    return request.getHeader("Fpc_Cors_Req_Prefligh") != null;
+  }
 
   private boolean hasLoggedIn() {
     Authentication authen = SecurityContextHolder.getContext().getAuthentication();
@@ -31,49 +54,23 @@ public class CsrfTokenController {
     return authen != null && !resolver.isAnonymous(authen);
   }
 
-  private boolean isLoginUserFirstCall(HttpServletRequest request) {
-    return hasLoggedIn()
-        && request.getSession(false).getAttribute(IS_CSRF_TOKEN_RETURNED_MARK) == null;
-  }
-
-  /**
-   * <pre>
-   * When to use it:
-   * -1- Before user login FPC. n times.
-   *
-   * -2- After login. 1 time.
-   *   This API only return token for the first time for CSRF security reason.
-   *   To make sure attackers can not got the token even they know this API.
-   *
-   * -3- After user change his/her password. 1 time.
-   *   As the session and token are changed for fixation security concern.
-   *   Front end need to get updated token.
-   *
-   * Note: 2 and 3 are @deprecated and will be deleted
-   */
   @GetMapping(value = "/v1/csrf", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
   public ResponseEntity<String> get(
       NativeWebRequest webRequest, HttpServletRequest request, HttpServletResponse response)
       throws Exception {
-    CsrfToken csrfToken =
-        (CsrfToken)
-            webRequest.getAttribute(CsrfToken.class.getName(), NativeWebRequest.SCOPE_REQUEST);
+    if (withRequiredRequestHead(request)) {
+      CsrfToken csrfToken =
+          (CsrfToken)
+              webRequest.getAttribute(CsrfToken.class.getName(), NativeWebRequest.SCOPE_REQUEST);
 
-    String tokenInfo =
-        new JSONObject()
-            .put("headerName", csrfToken.getHeaderName())
-            .put("parameterName", csrfToken.getParameterName())
-            .put("token", csrfToken.getToken())
-            .put("status", "success")
-            .toString();
+      String tokenInfo =
+          new JSONObject()
+              .put("headerName", csrfToken.getHeaderName())
+              .put("parameterName", csrfToken.getParameterName())
+              .put("token", csrfToken.getToken())
+              .put("status", "success")
+              .toString();
 
-    if (!hasLoggedIn()) {
-      return ResponseEntity.ok(tokenInfo);
-    }
-    // The following lines will be deleted.
-    // Instead include token in feedback of login and change password request.
-    if (isLoginUserFirstCall(request)) {
-      request.getSession(false).setAttribute(IS_CSRF_TOKEN_RETURNED_MARK, true);
       return ResponseEntity.ok(tokenInfo);
     }
     log.warn("Somebody is trying to get the CSRF token");
