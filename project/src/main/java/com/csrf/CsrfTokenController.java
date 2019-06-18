@@ -1,4 +1,4 @@
-package com.ftnt.fpcs.rest.controller;
+package com.coustomer.projs.rest.controller;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -27,11 +27,11 @@ public class CsrfTokenController {
    * <pre>
    * Add a bar for CSRF attacker trying to get CSRF token even
    * the session in cookie can compromise.
-   * Require custom request header 'Fpc_Cors_Req_Refligh'.
+   * Require custom request header 'Prj_Cors_Req_Refligh'.
    * It is designed to let CORS supported browsers issue an
    * option preflighted request. Then Spring rejects it with
    * the default configuration. Without CORS it is not possible
-   * to add 'Fpc_Cors_Req_Refligh' to a cross domain XHR request.
+   * to add 'Prj_Cors_Req_Refligh' to a cross domain XHR request.
    * So with checking it the server knows: The request
    * - The request is not from an attacker's domain attempting
    *   to make a request on behalf of the user with JavaScript.
@@ -43,7 +43,7 @@ public class CsrfTokenController {
    * 'https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#Preflighted_requests'>Preflighted requests</a>
    */
   public static boolean withRequiredRequestHead(HttpServletRequest request) {
-    return request.getHeader("Fpc_Cors_Req_Prefligh") != null;
+    return request.getHeader("Prj_Cors_Req_Prefligh") != null;
   }
 
   private boolean hasLoggedIn() {

@@ -9,7 +9,7 @@ import org.tinyradius.dictionary.WritableDictionary;
  * user case: 
   <code> RadiusClient rc = new RadiusClient(ipAddress, secretKey);
     AccessRequest ar = new AccessRequest(user, password);
-    ar.setDictionary(SingleTon.INSTANCE.getFPCDictionary());
+    ar.setDictionary(SingleTon.INSTANCE.getPROJDictionary());
     rc.setAuthPort(port);
     log.info("AUTH USED === " + ar.getAuthProtocol());
 
@@ -26,7 +26,7 @@ import org.tinyradius.dictionary.WritableDictionary;
    
     $ find -type f -name ProRadiusDictionary
      ./src/main/resources/ProRadiusDictionary
-     ./project/target/fpc/WEB-INF/classes/ProRadiusDictionary
+     ./project/target/proj/WEB-INF/classes/ProRadiusDictionary
 
 ################################################
 # Attributes
@@ -58,7 +58,7 @@ public enum SingleTonRadiusDirectory {
     }
   }
 
-  public Dictionary getFPCDictionary() {
+  public Dictionary getPROJDictionary() {
     return wrappedDict;
   }
 }
