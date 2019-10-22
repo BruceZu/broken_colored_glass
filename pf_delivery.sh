@@ -1,14 +1,33 @@
 #!/bin/bash
-# Test with:
-#   delivery images to ${IM_SERVER_USER}@${IM_SERVER}. TODO: to registeryserver.
-#'-k' option:
+##  with current commit to build image/tag image/delivery the following files to target docker image repository.
+# - 4 temporary docker images. After download to FMG VM, they will be installed in the local docker repository maintained by the docker itself.
+# - 1 docker-compose-fmg-vm YAML file
+# - 1 version.txt file(For debug: map git commit to current docker images)
+# - 1 md5sum.txt(verify integration before using docker image registry server)
+#
+## Test repository is :
+#   delivery images to ${IM_SERVER_USER}@${IM_SERVER}. TODO: delivery to docker image repository once it is available.
+## '-k' option:
 #   is helpful to skip the image build step for some corner case.
-#   e.g.: the images registry server disk is full.
+#   e.g.: the images registry server disk is full. or no chanages to docker image
+
+function tag() {
+    local root_dir=$1
+    local project_name="$($root_dir/docker_cli get-project-name)"
+    # need not all docker images.
+    local deploy_id="fsw_dev_fmg"
+    for service in $($root_dir/find_services_to_apply.py $deploy_id); do
+        docker tag ${project_name}_$service:latest $PREFIX$service:latest
+    done
+}
 
 set -eux
-P_ROOT=$(git rev-parse --show-toplevel)
-COMMON_FILE=${P_ROOT}/pf_common.sh
-source ${COMMON_FILE}
+FROM="$(pwd)"
+I=$(readlink -f $0)
+MY_PATH=$(dirname $I)
+source "${MY_PATH}"/pf_common.sh
+
+P_ROOT="$(git rev-parse --show-toplevel)"
 
 echo "container: clean"
 for c in $(docker ps -a | grep $PREFIX | awk '{print $1}'); do
@@ -40,7 +59,8 @@ else
     echo "build docker images "
     cd $P_ROOT
     ./deploy/nodejs/install_nodejs.sh
-    make managerapp_vm
+    make image DEPLOY_ID=fsw_dev_fmg
+    tag $P_ROOT
 fi
 
 for ((i = 0; i < ${#SAVED[@]}; i++)); do
@@ -63,12 +83,11 @@ done
 # SCP yml and files (under project root) needed to start containers
 tmp_path="./tmp"
 mkdir -p "$tmp_path/"
-cp "$YAML" "$YAML_VM" "ENV" "$tmp_path/"
-files=(
-    nodes/elasticsearch/files/usr/share/elasticsearch/config/elasticsearch.yml
-    nodes/kibana/files/usr/share/kibana/config/*
+cp "$YAML_VM" "$tmp_path/"
+config_files=(
+    # nodes/elasticsearch/files/usr/share/elasticsearch/config/elasticsearch.yml
 )
-for f in ${files[@]}; do
+for f in ${config_files[@]}; do
     base="$tmp_path/${f%/*}"
     mkdir -p "${base}"
     cp -r "$P_ROOT/$f" "${base}/"
@@ -102,3 +121,4 @@ done
 
 rm -rf "$tmp_path"
 echo "Success"
+cd $FROM
