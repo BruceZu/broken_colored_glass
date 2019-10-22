@@ -1,26 +1,196 @@
-version: "3.4"
-
+# Compared to docker-compose.yml
+# # - Usage: this yml file is NOT used to build the docker image, instead it is only used
+#   to deploy docker images in FMG VM.
+#   so  no extensions field `x-custom-metadata` (for build image only)
+#       no  `build`
+# # - For local test:
+#     1> call pf_delivery.sh.
+#        Note: it is not enough to only run `make image DEPLOY_ID=fsw_dev_fmg`.
+#              this file use customized image tags.
+#              Not maintain the image tag in Makefile and docker_cli to decouple
+#              the delivery with build process )
+#     2>  mock the FMG VM environment
+#         mkdir -p /var/docker/fortifsw/{portal_data,mysql_data,mongodb_data,elasticsearch_data}
+#     3>  elasticsearch require
+#         sudo sysctl -w vm.max_map_count=262144
+#     4>  docker-compose $thisfile up or 'make run DEPLOY_ID=fsw_dev_fmg'
+#
+# # - content: the followings are requirements in FMG VM environment and also
+#   the reason make this file difference with docker-compose.yml
+#
+# ## port:
+#    limitation: only expose the following port of sockstunnel
+#    and portal:
+#      - portal port:
+#          exposed http 8000 as 9444. designed by Hai
+#          - "9444:8000"
+#      -sockstunnel port:
+#          # 8443 is occupied by FMG in VM
+#          - "9445:443"
+#
+# ## volume: need check volume and Dockerfile to make sure:
+#   disallow:
+#      - expose any src and configure file out from the container
+#   only allow:
+#      - persistent business data in DB to host FMG VM
+#
+#   for 'sockstunnel' service, use FMG VM https certificate: "/etc/cert:/src/sockstunnel-py/keys/fmg"
+#   let's start with official elasticsearch image. (skip the config file)
+#   docker volumes persistent data under host FMG VM /var/docker/fortifsw
+#
+# ## environment: by default, it is Switch not Extenders
+#
+#     DEPLOYMENT_IDENTIFIER: "fsw_dev_fmg"
+#     only needed for images built by us: portal, worker, sockstunnel and logstash
+#
+# ## image:
+#   use customized image name for portal, worker, sockstunnel and logstash
+#   need not deploy
+#    - fcld-base(only for building images).
+#    - emsproxy
+#    - kibana. it is used for dev & debugging
+#    - zookeepr
+#    - kafka
+# ## ulimits: required in portal container in FMG VM, like:
+#         ulimits
+#             nofile:
+#                 soft: 1048576
+#                 hard: 1048576
+#   Root reason: the dockerd ulimit default value(1024) of the number of open files in FMG VM
+#   prevent the Redis server from starting up in portal docker.
+#
+# ## 'restart: always'
+#
+# # Note:
+#  To make it easy to maintain, not use 'Multiple Compose files' feature.
+#  Because it's rule of 'port' and 'volume' does not match this scenario.
+#  see https://docs.docker.com/compose/extends/#adding-and-overriding-configuration
+#  check the merge/overriding result  by command
+#    'docker-compose -f docker-compose.yml -f docker-compose-fmg-vm.yml config'
+# # Ignored issues
+#   - logstash issue: ignored
+#       details see http://paste.openstack.org/show/750149/
+#       ignored because logstash log show it will not complain later after the target elasticsearch service is up.
+version: "3.7"
 services:
+    redis:
+        image: redis
+        restart: always
     mysql:
-        build:
-            context: .
-            dockerfile: docker/release/mysql/Dockerfile
-        image: proj_mysql:latest
-        ports:
-            - "3307:3306"
+        image: mariadb
+        restart: always
         environment:
-            MYSQL_ROOT_PASSWORD: "root"
+            MYSQL_ROOT_PASSWORD: 111111Qq
+            MYSQL_ROOT_HOST: portal
+            MYSQL_DATABASE: cloudmanager
+            MYSQL_USER: admin
+            MYSQL_PASSWORD: 111111Qq
         volumes:
-            - proj_mysql_data_3307:/var/lib/mysql
-    proj:
-        build:
-            context: .
-            target: release
-            dockerfile: docker/release/Dockerfile
-        image: proj_release:latest
+            - "mysql_data:/var/lib/mysql"
+    mongo:
+        image: "mongo:4.0.4"
+        restart: always
+        volumes:
+            - "mongodb_data:/data/db"
+    elasticsearch:
+        image: "elasticsearch:6.7.2"
+        restart: always
+        volumes:
+            - "elasticsearch_data:/user/share/elasticsearch/data"
+        environment:
+            ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+    logstash:
+        image: "fortifsw_logstash:latest"
+        restart: always
+        environment:
+            LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+            ELASTICSEARCH_PORT: "9200"
+            ELASTICSEARCH_SSL: "false"
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_fmg"
+        depends_on:
+            - elasticsearch
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+
+    worker:
+        image: "fortifsw_worker:latest"
+        restart: always
+        depends_on:
+            - mongo
+            - redis
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_fmg"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+
+    portal:
+        image: "fortifsw_portal:latest"
+        restart: always
+        depends_on:
+            - mysql
+            - mongo
+            - worker
+            - redis
         ports:
-            - "0.0.0.0:8444:443"
+            - "9444:8443"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        volumes:
+            - "portal_data:/media/"
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_fmg"
+
+    sockstunnel:
+        image: "fortifsw_sockstunnel:latest"
+        restart: always
+        depends_on:
+            - mongo
+            - redis
+            - worker
+            - portal
+        ports:
+            - "9445:443"
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_fmg"
+        volumes:
+            - "/etc/cert:/src/sockstunnel-py/keys/fmg"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
 
 volumes:
-    proj_mysql_data_3307:
+    portal_data:
         driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/fortifsw/portal_data"
+    mysql_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/fortifsw/mysql_data"
+    mongodb_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/fortifsw/mongodb_data"
+    elasticsearch_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/fortifsw/elasticsearch_data"
