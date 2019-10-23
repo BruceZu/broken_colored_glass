@@ -1,7 +1,7 @@
 #!/bin/bash
 ##  with current commit to build image/tag image/delivery the following files to target docker image repository.
-# - 4 temporary docker images. After download to FMG VM, they will be installed in the local docker repository maintained by the docker itself.
-# - 1 docker-compose-fmg-vm YAML file
+# - 4 temporary docker images. After download to BPJ VM, they will be installed in the local docker repository maintained by the docker itself.
+# - 1 docker-compose-managerapp-vm YAML file
 # - 1 version.txt file(For debug: map git commit to current docker images)
 # - 1 md5sum.txt(verify integration before using docker image registry server)
 #
@@ -15,7 +15,7 @@ function tag() {
     local root_dir=$1
     local project_name="$($root_dir/docker_cli get-project-name)"
     # need not all docker images.
-    local deploy_id="fsw_dev_fmg"
+    local deploy_id="hardware-a_dev_managerapp"
     for service in $($root_dir/find_services_to_apply.py $deploy_id); do
         docker tag ${project_name}_$service:latest $PREFIX$service:latest
     done
@@ -59,7 +59,7 @@ else
     echo "build docker images "
     cd $P_ROOT
     ./deploy/nodejs/install_nodejs.sh
-    make image DEPLOY_ID=fsw_dev_fmg
+    make image DEPLOY_ID=hardware-a_dev_managerapp
     tag $P_ROOT
 fi
 

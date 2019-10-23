@@ -16,7 +16,7 @@
 			pathname="conf/tomcat-users.xml" />
 	</GlobalNamingResources>
 	<Service name="Catalina">
-		<Connector port="443" 
+		<Connector port="8443"
 			protocol="org.apache.coyote.http11.Http11NioProtocol" 
 			maxThreads="150" 
 			SSLEnabled="true" 
@@ -28,7 +28,7 @@
 			keystorePass="123456"></Connector>
 		<Connector port="8009" 
 			protocol="AJP/1.3" 
-			redirectPort="443" />
+			redirectPort="8443" />
 		<Engine name="Catalina" 
 			defaultHost="localhost">
 			<Realm className="org.apache.catalina.realm.LockOutRealm">

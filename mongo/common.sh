@@ -515,7 +515,7 @@ function for_2_sec_per_replst() {
   caller 0
   env_check
   # Apply backup to 2 secondary of each replset
-  # "Oregon fext-alpha & fsw-beta"
+  # "Oregon fext-alpha & hardware-a-beta"
   for host in ${dev_both_Ore_2b} ${dev_both_Ore_2c_new}; do
     apply_each_node ${sshhop_user_name} ${dev_both_Ore_hop} ${ec2_user_name} ${host} "${dev_both_name}" "$@"
   done

@@ -1,10 +1,10 @@
 #!/bin/bash
 # Used by pf_delivery.sh and pf_deploy.sh
-S_A="sockstunnel"
+S_A="socks-deamon-a"
 S_B="portal"
 S_C="worker"
 S_E="logstash"
-PREFIX="fortifsw_"
+PREFIX="comphardware-a_"
 A="${PREFIX}$S_A"
 B="${PREFIX}$S_B"
 C="${PREFIX}$S_C"
@@ -25,12 +25,12 @@ SAVED=("$SAVED_A" "$SAVED_B" "$SAVED_C" "$SAVED_E")
 
 FILES_TAR="files.tar.gz"
 
-YAML_VM=docker-compose-fmg-vm.yml
+YAML_VM=docker-compose-managerapp-vm.yml
 
 md5sums=md5sum.txt
 version=version.txt
 
-HOME_ON_HOP=/tmp/cloudplatform_home
+HOME_ON_HOP=/tmp/cloud_home
 
 registry=/tmp/registry.txt
 if [[ -f $registry ]]; then

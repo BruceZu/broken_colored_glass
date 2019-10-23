@@ -1,11 +1,11 @@
 #!/bin/bash
-## start/stop FortinetCloudPlatform in FMG VM.
+## start/stop compnetCloudPlatform in BPJ VM.
 #
-##  Run this bash with pf_common.sh in the same directory somewhere in destination FMG VM.
+##  Run this bash with pf_common.sh in the same directory somewhere in destination BPJ VM.
 # E.g. /var/deploy/pf
 #
 ##  Currently it is using the mocked docker images repostiory to fetch docker images:
-#   sshpass -p 'admin123'  ssh -o "StrictHostKeyChecking no" -o "IdentitiesOnly=yes" admin@10.106.6.53
+#   sshpass -p 'admin123'  ssh -o "StrictHostKeyChecking no" -o "IdentitiesOnly=yes" admin@167.188.21.37
 #   images is fetched from ${IM_SERVER_USER}@${IM_SERVER}.
 #   TODO: fetch them from offical docker iamges repository once it is ready.
 #
@@ -19,14 +19,14 @@ function deploy() {
 
     local PF_HOME=/var/pf_home
 
-    echo "# set persistant tmp path used by docker compose in FMG VM"
+    echo "# set persistant tmp path used by docker compose in BPJ VM"
     local TMP=/var/tmp/docker_compose_pf
     rm -rf ${TMP}/*
     mkdir -p ${TMP}
     export TMPDIR=${TMP}
 
     echo "# prepare the persistent storage sub directory"
-    mkdir -p /var/docker/fortifsw/{portal_data,mysql_data,mongodb_data,elasticsearch_data}
+    mkdir -p /var/docker/comphardware-a/{portal_data,mysql_data,mongodb_data,elasticsearch_data}
 
     echo "# prepare the max_map_count for elasticsearch"
     echo 262144 >/proc/sys/vm/max_map_count
@@ -112,7 +112,7 @@ function usage() {
     default: fetch Platform docker images latest version and start Platform
         -h --help: usage.
         -n --no-fetch: not fetch images, still use exiting one.
-        -s --stop: stop running apps of cloud platform.
+        -s --stop: stop running apps of cloud .
     "
 }
 

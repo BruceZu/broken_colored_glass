@@ -30,7 +30,7 @@ sleep 10
 while true; do
   if [[ $(docker-compose ps | grep tomcat | awk '{print $3}') != Up ]]; then
     debug_log "The tomcat docker container is not available."
-    break
+    exit 1
   fi
   wget --spider --no-check-certificate --timeout 30 --tries 1 "$url" 2>&1 | grep "${connected_msg}"
   if [ $? == 0 ]; then

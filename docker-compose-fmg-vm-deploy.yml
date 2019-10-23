@@ -1,0 +1,39 @@
+version: "3.7"
+
+services:
+  compportal:
+    image: registry.compnet.com/compportal/compportal:latest
+    restart: always
+    ports:
+      - "8444:8444"
+    environment:
+      IS_IN_BPJ_VM: "true"
+    networks:
+      app_net:
+        ipv4_address: 169.254.255.50
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
+  compportaldb:
+    image: registry.compnet.com/compportal/projdb:latest
+    restart: always
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+    volumes:
+      - /var/docker/compportal/projdb:/var/lib/mysql
+    networks:
+      app_net:
+        aliases:
+          - mysql
+        ipv4_address: 169.254.255.51
+networks:
+  app_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: "169.254.255.48/28"

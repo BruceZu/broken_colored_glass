@@ -1,14 +1,19 @@
-FROM tomcat:9.0.12-jre8
+FROM tomcat:9.0.22-jdk8-openjdk
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y  --no-install-recommends \
     apt-utils \
     maven \
     procps \
     gawk \
     python \
     inotify-tools \
-    inotify-hookable  \
-    openjdk-8-jdk && javac -version
+    inotify-hookable \
+    lynx \
+    apache2
+COPY ./docker/apache2_httpd/etc/apache2/apache2.conf /etc/apache2/apache2.conf
+COPY ./docker/apache2_httpd/etc/apache2/sites-available/default-ssl.conf /etc/apache2/sites-available/default-ssl.conf
+COPY ./docker/apache2_httpd/etc/apache2/mods-available/mpm_event.conf /etc/apache2/mods-available/mpm_event.conf
+RUN a2enmod ssl && a2enmod proxy && a2enmod proxy_http && a2enmod  headers && a2enmod proxy_wstunnel && a2enmod proxy_connect && a2ensite default-ssl.conf
 
 COPY ./docker/maven/toolchains.xml /root/.m2/
 COPY ./docker/tomcat/conf/server.xml $CATALINA_HOME/conf/server.xml

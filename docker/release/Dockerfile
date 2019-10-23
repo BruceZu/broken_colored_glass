@@ -1,6 +1,6 @@
 ARG TOMCAT_CONFIG_PATH=./docker/tomcat/conf
 ARG DBMIG_CONFIG_PATH=./project/dbm/src/main/resources/db_migration2
-ARG DEV_MODE=1
+ARG DEV_MODE=0
 FROM openjdk:8u181-jdk-stretch as package
 ARG DEV_MODE
 
@@ -16,9 +16,9 @@ ARG DBMIG_CONFIG_PATH
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-	apt-utils \
-	procps \
-	gawk
+    apt-utils \
+    procps \
+    gawk
 COPY ${TOMCAT_CONFIG_PATH}/server.xml $CATALINA_HOME/conf/server.xml
 COPY ${TOMCAT_CONFIG_PATH}/tomcat-users.xml $CATALINA_HOME/conf/tomcat-users.xml
 COPY ${TOMCAT_CONFIG_PATH}/tomcat.keystore $CATALINA_HOME/conf/tomcat.keystore
@@ -34,6 +34,4 @@ COPY ./docker/tomcat/util/proj/label.conf /var/tomcat/util/proj/label.conf
 COPY ./docker/release/dbm/forDocker.config.properties /dbm/forDocker.config.properties
 
 COPY docker/release/entrypoint/start-tomcat.sh /entrypoint/start-tomcat.sh
-# https://packages.debian.org/buster/amd64/apache2/download
-# https://pkgs.org/download/apache2
 CMD ["/entrypoint/start-tomcat.sh"]

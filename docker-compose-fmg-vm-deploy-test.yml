@@ -1,0 +1,11 @@
+
+
+version: "3.7"
+services:
+  compportal:
+    image: dockertest-fext:443/compportal/compportal:latest
+  volumes:
+    - ./project/src/main/resources/log4j2.xml:/usr/local/tomcat/webapps/proj/WEB-INF/classes/log4j2.xml
+
+  compportaldb:
+    image: dockertest-fext:443/compportal/projdb:latest

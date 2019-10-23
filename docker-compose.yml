@@ -15,11 +15,13 @@ services:
             context: .
             dockerfile: docker/Dockerfile
         ports:
-            - "8081:8080"
-            - "8444:443"
+            - "8444:8443"
+            - "9444:443"
         volumes:
             - maven_repository:/root/.m2/repository
             - node_npm_dir:/root/.nvm
+            - npm_cache:/root/.npm
+            - npm_dependencies:/tmp/proj
             - ./docker/maven/settings.xml:/root/.m2/settings.xml
             - ./project:/project
             - ./docker/entrypoint/start-tomcat.sh:/entrypoint/start-tomcat.sh
@@ -27,9 +29,15 @@ services:
             - ./docker/entrypoint/write-event.sh:/entrypoint/write-event.sh
             - ./docker/entrypoint/handle-event.sh:/entrypoint/handle-event.sh
             - ./docker/entrypoint/common.sh:/entrypoint/common.sh
-            - /tmp/proj_docker_tmp/:/tmp/
+            - /tmp/proj_docker_event:/tmp/event
             - dbm_shit:/dbm/shit
             - ./docker/tomcat/util/proj/label.conf:/var/tomcat/util/proj/label.conf
+            - ./project/outservice/server/tomcat/projstore:/var/tomcat/conf/projstore
+            - ./project/outservice/server/tomcat/proj.crt:/var/tomcat/conf/proj.crt
+            - ./project/outservice/server/tomcat/proj.key:/var/tomcat/conf/proj.key
+            - ./project/outservice/server/tomcat/ca_chain.crt:/var/tomcat/conf/ca_chain.crt
+
+
 volumes:
     mysql_data_3307:
         driver: local
@@ -38,4 +46,8 @@ volumes:
     node_npm_dir:
         driver: local
     dbm_shit:
+        driver: local
+    npm_dependencies:
+        driver: local
+    npm_cache:
         driver: local

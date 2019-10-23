@@ -4,4 +4,4 @@
 # with the '-m' option the inotifywait will execute indefinitely without exit.
 source /entrypoint/common.sh
 debug_log "Event happen: $@"
-echo "$@" >>/tmp/events.txt
+echo "$@" >>/tmp/event/events.txt

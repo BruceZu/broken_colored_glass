@@ -1,0 +1,17 @@
+# Only used for building docker images used later in BPJ_VM
+version: "3.7"
+
+services:
+    proj:
+        build:
+            context: .
+            target: release
+            dockerfile: docker/release/Dockerfile
+            args: [DEV_MODE:0]
+        image: managerapp_vm_proj:latest
+
+    proj_db:
+        build:
+            context: .
+            dockerfile: docker/release/mysql/Dockerfile
+        image: managerapp_vm_proj_db:latest
