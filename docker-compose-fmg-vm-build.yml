@@ -7,11 +7,12 @@ services:
             context: .
             target: release
             dockerfile: docker/release/Dockerfile
-            args: [DEV_MODE:0]
-        image: managerapp_vm_proj:latest
+            args:
+                DEV_MODE: 0
+        image: compportal/compportal:latest
 
     proj_db:
         build:
             context: .
             dockerfile: docker/release/mysql/Dockerfile
-        image: managerapp_vm_proj_db:latest
+        image: compportal/compportal_db:latest

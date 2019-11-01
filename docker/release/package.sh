@@ -1,7 +1,9 @@
 #!/bin/bash
 set -x
 DEV_MODE=$1
+
 if [ $DEV_MODE -eq 0 ]; then
+    echo -e "\nNot in DEV_MODE \n"
     rm -rf \
         /project/target/ \
         /project/dbm/target/ &&
@@ -22,4 +24,6 @@ if [ $DEV_MODE -eq 0 ]; then
             -Dcheckstyle.skip=true \
             -Djacoco.skip=true \
             war:exploded -ff -f /project/pom.xml
+else
+    echo -e "\nIn DEV_MODE \n"
 fi

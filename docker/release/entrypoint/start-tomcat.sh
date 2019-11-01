@@ -5,13 +5,11 @@ LOG=${MIGRATION_ROOT}/dbm_check.log
 function wait_mysql_up() {
     local mysql_service=mysql
     local mysql_port=3306
-    local mysql_up_message="awaiting response... 200"
-    local check_command="wget -o - -T 2 http://${mysql_service}:${mysql_port} 2>&1 | grep -o \"${mysql_up_message}\""
-
+    local check_command="mysqladmin status -h${mysql_service} -P${mysql_port} -uroot -proot"
     eval "$check_command"
     while [ $? -ne 0 ]; do
-        echo "waiting till mysql is up"
-        sleep 1
+        echo "MariaDB is not up, wait 3s and try again"
+        sleep 3s
         eval "$check_command"
     done
 }

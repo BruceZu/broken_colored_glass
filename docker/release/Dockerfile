@@ -18,6 +18,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-utils \
     procps \
+    mysql-client \
     gawk
 COPY ${TOMCAT_CONFIG_PATH}/server.xml $CATALINA_HOME/conf/server.xml
 COPY ${TOMCAT_CONFIG_PATH}/tomcat-users.xml $CATALINA_HOME/conf/tomcat-users.xml

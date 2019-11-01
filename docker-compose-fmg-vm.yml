@@ -1,0 +1,218 @@
+# Compared to docker-compose.yml
+# # Usage: this yml file is only used to deploy docker images in BPJ VM.
+#          it is NOT used to build the docker image.
+#          So  no extensions field `x-custom-metadata` (for build image only)
+#          and no  `build`
+#
+# # Content: the followings are requirements in BPJ VM environment and also
+#            the reason make this file difference with docker-compose.yml
+#
+# ## port:
+#    limitation: only expose the following port of sockstunnel
+#    and portal:
+#      - portal port:
+#          exposed http 8000 as 9444. designed by Hai
+#          - "9444:8000"
+#      -sockstunnel port:
+#          # 8443 is occupied by BPJ in VM
+#          - "9445:443"
+#
+# ## volume:
+#    need check volume and Dockerfile to make sure:
+#    disallow:
+#      - expose any src and configure file out from the container
+#    only allow:
+#      - persistent business data in DB to host BPJ VM
+#
+#    for 'sockstunnel' service, use BPJ VM https certificate: "/etc/cert:/src/sockstunnel-py/keys/managerapp"
+#    let's start with official elasticsearch image. (skip the config file)
+#    docker volumes persistent data under host BPJ VM /var/docker/compfsw:
+#    /var/docker/compfsw/{portal_data,mysql_data,mongodb_data,elasticsearch_data}
+#
+# ## environment:
+#     by default, it is Switch not Extenders
+#     DEPLOYMENT_IDENTIFIER: "fsw_dev_managerapp"
+#     only needed for images built by us: portal, worker, sockstunnel and logstash
+#
+# ## image:
+#    use customized image name for portal, worker, sockstunnel and logstash
+#    need not deploy
+#    - cloud-base(only for building images).
+#    - emsproxy
+#    - kibana. it is used for dev & debugging
+#    - zookeepr
+#    - kafka
+# ## ulimits: required in portal container in BPJ VM, like:
+#    ulimits
+#        nofile:
+#            soft: 1048576
+#            hard: 1048576
+#     Root reason: the dockerd ulimit default value(1024) of the number of open files in BPJ VM
+#     prevent the Redis server from starting up in portal docker.
+#
+# ## 'restart: always'
+# ##  networks: allocate static IP for containers
+#
+# # Note:
+#  To make it easy to maintain, not use 'Multiple Compose files' feature.
+#  Because it's rule of 'port' and 'volume' does not match this scenario.
+#  see https://docs.docker.com/compose/extends/#adding-and-overriding-configuration
+#  check the merge/overriding result  by command
+#    'docker-compose -f docker-compose.yml -f docker-compose-managerapp-vm.yml config'
+# # Ignored issues
+#   - logstash issue: ignored
+#       details see http://paste.openstack.org/show/750149/
+#       ignored because logstash log show it will not complain later after the target elasticsearch service is up.
+#
+version: "3.7"
+services:
+    redis:
+        image: redis
+        restart: always
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.73
+    mysql:
+        image: mariadb
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: 111111Qq
+            MYSQL_ROOT_HOST: portal
+            MYSQL_DATABASE: cloudmanager
+            MYSQL_USER: admin
+            MYSQL_PASSWORD: 111111Qq
+        volumes:
+            - "mysql_data:/var/lib/mysql"
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.72
+    mongo:
+        image: "mongo:4.0.4"
+        restart: always
+        volumes:
+            - "mongodb_data:/data/db"
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.71
+    elasticsearch:
+        image: "elasticsearch:6.7.2"
+        restart: always
+        volumes:
+            - "elasticsearch_data:/user/share/elasticsearch/data"
+        environment:
+            ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.70
+    logstash:
+        image: "registry.compnet.com/compcloud/compswitch/logstash:latest"
+        restart: always
+        environment:
+            LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+            ELASTICSEARCH_PORT: "9200"
+            ELASTICSEARCH_SSL: "false"
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_managerapp"
+        depends_on:
+            - elasticsearch
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.69
+    worker:
+        image: "registry.compnet.com/compcloud/compswitch/worker:latest"
+        restart: always
+        depends_on:
+            - mongo
+            - redis
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_managerapp"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.68
+
+    portal:
+        image: "registry.compnet.com/compcloud/compswitch/portal:latest"
+        restart: always
+        depends_on:
+            - mysql
+            - mongo
+            - worker
+            - redis
+        ports:
+            - "9444:8443"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        volumes:
+            - "portal_data:/media/"
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_managerapp"
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.67
+    sockstunnel:
+        image: "registry.compnet.com/compcloud/compswitch/sockstunnel:latest"
+        restart: always
+        depends_on:
+            - mongo
+            - redis
+            - worker
+            - portal
+        ports:
+            - "9445:443"
+        environment:
+            DEPLOYMENT_IDENTIFIER: "fsw_dev_managerapp"
+        volumes:
+            - "/etc/cert:/src/sockstunnel-py/keys/managerapp"
+        ulimits:
+            nofile:
+                soft: 1048576
+                hard: 1048576
+        networks:
+            app_net:
+                ipv4_address: 169.254.255.66
+
+volumes:
+    portal_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/compfsw/portal_data"
+    mysql_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/compfsw/mysql_data"
+    mongodb_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/compfsw/mongodb_data"
+    elasticsearch_data:
+        driver: local
+        driver_opts:
+            type: "none"
+            o: "bind"
+            device: "/var/docker/compfsw/elasticsearch_data"
+
+networks:
+    app_net:
+        ipam:
+            driver: default
+            config:
+                - subnet: "169.254.255.64/28"

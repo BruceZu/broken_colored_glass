@@ -1,0 +1,14 @@
+# This is a yml template used by pf_deploy_test.sh for test in BPJ VM
+# You may need to change it to adapt to your objective
+# 'registry-test:443' is current registry test server.
+
+version: "3.7"
+services:
+  logstash:
+    image: "registry-test:443/compcloud/compswitch/logstash:latest"
+  worker:
+    image: "registry-test:443/compcloud/compswitch/worker:latest"
+  portal:
+    image: "registry-test:443/compcloud/compswitch/portal:latest"
+  sockstunnel:
+    image: "registry-test:443/compcloud/compswitch/sockstunnel:latest"

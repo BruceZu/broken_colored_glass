@@ -1,0 +1,50 @@
+# provided and released with BPJ VM
+
+version: "3.7"
+
+services:
+  compportal:
+    image: registry.compnet.com/compportal/compportal:latest
+    restart: always
+    ports:
+      - "8444:8444"
+    environment:
+      IS_IN_BPJ_VM: "true"
+    networks:
+      app_net:
+        ipv4_address: 169.254.255.50
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    depends_on:
+      - compportaldb
+
+  compportaldb:
+    image: registry.compnet.com/compportal/compportal_db:latest
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_ROOT_HOST: "169.254.255.50"
+    volumes:
+      - "projdb_data:/var/lib/mysql"
+    networks:
+      app_net:
+        aliases:
+          # PROJ service will connect DB with this name. Do not change it.
+          - mysql
+        ipv4_address: 169.254.255.51
+networks:
+  app_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: "169.254.255.48/28"
+volumes:
+  projdb_data:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "/var/docker/compportal/projdb_data"

@@ -1,11 +1,19 @@
-
+# This is a yml template used by deploy_test.sh for test in BPJ VM
+# You may need to change it to adapt to your objective
+# 'registry-test:443' is current registry test server.
 
 version: "3.7"
 services:
   compportal:
-    image: dockertest-fext:443/compportal/compportal:latest
-  volumes:
-    - ./project/src/main/resources/log4j2.xml:/usr/local/tomcat/webapps/proj/WEB-INF/classes/log4j2.xml
+    image: registry-test:443/compportal/compportal:latest
+    restart: "no"
+    volumes:
+      - ./project/src/main/resources/log4j2.xml:/usr/local/tomcat/webapps/proj/WEB-INF/classes/log4j2.xml
 
   compportaldb:
-    image: dockertest-fext:443/compportal/projdb:latest
+    image: registry-test:443/compportal/compportal_db:latest
+    restart: "no"
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_HOST: "%"
