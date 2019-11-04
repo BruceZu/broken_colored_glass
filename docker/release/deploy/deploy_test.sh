@@ -29,7 +29,7 @@ function prepare_test_env() {
 }
 
 function prepare_managerapp_vm_env() {
-  for directory in ${TMP} ${PERSISTENT_DATA_DIR}; do
+  for directory in ${TMP} ${PERSISTENT_DATA_DIR[@]}; do
     [ ! -d "$directory" ] && mkdir -p $directory
   done
   # required by Docker in BPJ VM
@@ -117,7 +117,8 @@ echo "Start with NO_FETCH: $NO_FETCH"
 TMP=/var/tmp/docker_compose_proj
 TEST_FILES_HOME=/var/proj_home
 MY_DIR=$(dirname $(readlink -f $0))
-PERSISTENT_DATA_DIR="/var/docker/compportal/projdb_data"
+PERSISTENT_DATA_DIR_ROOT="/var/docker/compportal"
+PERSISTENT_DATA_DIR=(${PERSISTENT_DATA_DIR_ROOT}/{projdb_data,proj_data})
 
 prepare_test_env
 prepare_managerapp_vm_env

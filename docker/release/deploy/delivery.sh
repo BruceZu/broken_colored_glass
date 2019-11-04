@@ -112,6 +112,7 @@ If not present, the command uses ${tag} by default.\n"
     docker tag ${proj_db_image}:${proj_db_img_tag} ${target_proj_db_image}
     docker tag ${proj_image}:${proj_img_tag} ${target_proj_image}
     # docker login
+    [[ "${registry}" == "${REGISTRY_SERVER_TEST}" ]] && prepare_using_test_registery_server
     docker login ${registry}
     # docker push
     docker push ${target_proj_db_image}
@@ -172,7 +173,6 @@ echo "Start with TEST_MODE: $TEST_MODE, REUSE: $REUSE"
     release_software_check &&
     local_clean &&
     build_images &&
-    prepare_using_test_registery_server &&
     release
 
 [ $TEST_MODE -eq 1 ] &&

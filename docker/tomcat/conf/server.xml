@@ -16,7 +16,18 @@
 			pathname="conf/tomcat-users.xml" />
 	</GlobalNamingResources>
 	<Service name="Catalina">
-		<Connector port="8443"
+		<Connector port="8444" 
+			maxHttpHeaderSize="8192" 
+			maxThreads="150" 
+			minSpareThreads="25" 
+			maxSpareThreads="75" 
+			acceptCount="100" 
+			connectionTimeout="20000" 
+			disableUploadTimeout="true" 
+			secure="false" 
+			SSLEnabled="false" 
+			server=" " />
+		<Connector port="8443" 
 			protocol="org.apache.coyote.http11.Http11NioProtocol" 
 			maxThreads="150" 
 			SSLEnabled="true" 
