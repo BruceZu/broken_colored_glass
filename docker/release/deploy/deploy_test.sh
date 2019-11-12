@@ -39,8 +39,8 @@ function prepare_managerapp_vm_env() {
 
 function fetch_test_files() {
   # clean old files
-  [ -d "$TEST_FILES_HOME" ] && rm -rf "${TEST_FILES_HOME}/*"
-  [ ! -d "$TEST_FILES_HOME" ] && mkdir -p "$TEST_FILES_HOME"
+  [ -d "$TEST_FILES_HOME" ] && rm -rf "${TEST_FILES_HOME}"/*
+  [ ! -d "$TEST_FILES_HOME" ] && mkdir -p "${TEST_FILES_HOME}"
 
   # fetch
   sshpass -p ${IM_SERVER_PASS} ssh -o "StrictHostKeyChecking no" ${IM_SERVER_USER}@${IM_SERVER} ls &
@@ -124,6 +124,7 @@ prepare_test_env
 prepare_managerapp_vm_env
 prepare_using_test_registery_server
 [[ $NO_FETCH -eq 0 ]] &&
+  check_hop_access
   fetch_test_files
 clean
 deploy_with_test_file

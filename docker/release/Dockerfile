@@ -7,6 +7,7 @@ ARG DEV_MODE
 COPY ./project /project
 COPY ./docker/maven/toolchains.xml /root/.m2/toolchains.xml
 COPY ./docker/release/package.sh ./package.sh
+COPY ./docker/release/change_src_for_managerapp_vm.py ./change_src_for_managerapp_vm.py
 RUN ./package.sh $DEV_MODE
 
 FROM tomcat:9.0.12-jre8 as release
@@ -15,7 +16,7 @@ ARG DBMIG_CONFIG_PATH
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -qq --no-install-recommends \
     apt-utils \
     procps \
     mysql-client \

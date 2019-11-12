@@ -1,6 +1,6 @@
 FROM tomcat:9.0.22-jdk8-openjdk
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get update && apt-get install -y  --no-install-recommends \
+RUN apt-get update && apt-get install -qq  --no-install-recommends \
     apt-utils \
     maven \
     procps \

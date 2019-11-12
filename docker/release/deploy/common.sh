@@ -78,5 +78,3 @@ HOME_ON_HOP=/tmp/proj_home
 REGISTRY_SERVER_TEST_HOST="registry-test"
 REGISTRY_SERVER_TEST="${REGISTRY_SERVER_TEST_HOST}:443"
 
-# common step
-check_hop_access
