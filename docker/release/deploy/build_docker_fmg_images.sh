@@ -1,7 +1,7 @@
 #!/bin/bash
 function release_software_check() {
-    check_software docker
-    check_software docker-compose
+    check_software docker 19.03.2
+    check_software docker-compose 1.24.1
 }
 
 function local_clean() {

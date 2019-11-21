@@ -1,10 +1,36 @@
 #!/bin/bash
+
+# result: 0 means same; <0 means $1 < $2; and so on.
+function compare_int() {
+    _r=$3
+    if [[ $1 -lt $2 ]]; then
+        eval $_r=-1
+    elif [[ $1 -gt $2 ]]; then
+        eval $_r=1
+    else
+        eval $_r=0
+    fi
+}
+
 function check_software() {
     name=$1
-    which $1
-    if [[ $? == 1 ]]; then
-        echo "ERRO: need install $1"
-        exit 1
+    v=${2:-""}
+    echo "Check: if $name $v is installed"
+    which $name
+
+    if [[ "$v" != "" && ("$name" == "docker" || "$name" == "docker-compose") ]]; then
+        rv=$($name --version | grep -Po '(?<=version )\d+.\d+.\d+')
+        old_ifs=$IFS
+        IFS='.'
+        read -ra va <<<"$v"
+        read -ra rva <<<"$rv"
+        IFS=$old_ifs
+        i=0
+        while [[ $i -lt ${#va[@]} ]]; do
+            compare_int "${rva[$i]}" "${va[$i]}" r
+            [[ $r -lt 0 ]] && echo "Error: $name: $rv should be >= $v" && exit 1
+            i=$(($i + 1))
+        done
     fi
 }
 
@@ -60,7 +86,7 @@ END"
 }
 
 ## Main
-set -eux
+set -eu
 # files used for test in BPJ VM
 YAML=docker-compose-managerapp-vm-deploy-prod.yml
 YAML_TEST=docker-compose-managerapp-vm-deploy-test.yml
@@ -77,4 +103,3 @@ HOME_ON_HOP=/tmp/proj_home
 # registry test server info
 REGISTRY_SERVER_TEST_HOST="registry-test"
 REGISTRY_SERVER_TEST="${REGISTRY_SERVER_TEST_HOST}:443"
-
