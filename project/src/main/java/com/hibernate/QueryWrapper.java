@@ -39,16 +39,16 @@ public class QueryWrapper<T> {
     return root.join(embedded[0]).get(embedded[1]);
   }
 
-  private <X> CriteriaQuery<X> where(CriteriaQuery<X> q) {
+  private <X> CriteriaQuery<X> where(CriteriaQuery<X> cq) {
     if (pre != null) {
       Predicate[] pres = new Predicate[pre.size()];
       pre.toArray(pres);
-      q.where(pres);
+      cq.where(pres);
     }
-    return q;
+    return cq;
   }
 
-  private <X> void select(CriteriaQuery<X> q) {
+  private <X> void select(CriteriaQuery<X> cq) {
     if (select == null) {
       query.select(root);
     } else if (select.length == 1) {
@@ -90,6 +90,26 @@ public class QueryWrapper<T> {
 
   public QueryWrapper(Class<T> className, Session session, boolean forRowAccount) {
     this(className, session, forRowAccount, (String[]) null);
+  }
+
+  @SuppressWarnings("unchecked")
+  public <R> Expression<R> getKey(String column) {
+    return column.contains(".") ? (Expression<R>) pathOf(column) : root.get(column);
+  }
+
+  public interface PredicateBuilder {
+    Expression<Boolean> build(CriteriaBuilder build);
+  }
+
+  /**
+   * <pre>
+   * Developer need know how to create Expression with
+   * - object of {@link CriteriaBuilder}.
+   * - {@link QueryWrapper#getKey(String)}
+   */
+  public QueryWrapper<T> or(PredicateBuilder left, PredicateBuilder right) {
+    pre.add(builder.or(left.build(builder), right.build(builder)));
+    return this;
   }
 
   public QueryWrapper<T> andIsFalse(String column) {
@@ -181,12 +201,32 @@ public class QueryWrapper<T> {
     return this;
   }
 
-  public <Y extends Comparable<? super Y>> QueryWrapper<T> andBetween(String column, Y l, Y r) {
+  public <Y extends Comparable<? super Y>> QueryWrapper<T> andGreaterThanOrEqualTo(
+      String column, Y yl) {
     Preconditions.checkArgument(column != null && column.length() > 0);
     @SuppressWarnings("unchecked")
     Expression<? extends Y> key =
         column.contains(".") ? (Path<Y>) pathOf(column) : root.get(column);
-    pre.add(builder.between(key, l, r));
+    pre.add(builder.greaterThanOrEqualTo(key, yl));
+    return this;
+  }
+
+  public <Y extends Comparable<? super Y>> QueryWrapper<T> andLessThanOrEqualTo(
+      String column, Y yl) {
+    Preconditions.checkArgument(column != null && column.length() > 0);
+    @SuppressWarnings("unchecked")
+    Expression<? extends Y> key =
+        column.contains(".") ? (Path<Y>) pathOf(column) : root.get(column);
+    pre.add(builder.lessThanOrEqualTo(key, yl));
+    return this;
+  }
+
+  public <Y extends Comparable<? super Y>> QueryWrapper<T> andBetween(String column, Y lf, Y rt) {
+    Preconditions.checkArgument(column != null && column.length() > 0);
+    @SuppressWarnings("unchecked")
+    Expression<? extends Y> key =
+        column.contains(".") ? (Path<Y>) pathOf(column) : root.get(column);
+    pre.add(builder.between(key, lf, rt));
     return this;
   }
 
@@ -200,11 +240,11 @@ public class QueryWrapper<T> {
   public QueryWrapper<T> orderBy(boolean asc, String... cols) {
     Preconditions.checkArgument(cols != null && cols.length >= 0);
     Order[] orders = new Order[cols.length];
-    int i = 0;
+    int idx = 0;
     Expression<?> key;
     for (String col : cols) {
       key = col.contains(".") ? pathOf(col) : root.get(col);
-      orders[i++] = asc ? builder.asc(key) : builder.desc(key);
+      orders[idx++] = asc ? builder.asc(key) : builder.desc(key);
     }
     query.orderBy(orders);
     return this;
@@ -224,31 +264,31 @@ public class QueryWrapper<T> {
         startPosition == null && maxResult == null
             || startPosition != null && maxResult != null && startPosition >= 0 && maxResult > 0);
 
-    Query<T> q = getQuery();
-    log.debug(q.getQueryString());
+    Query<T> query = getQuery();
+    log.debug(query.getQueryString());
     if (startPosition != null) {
-      q.setFirstResult(startPosition);
+      query.setFirstResult(startPosition);
     }
     if (maxResult != null) {
-      q.setMaxResults(maxResult);
+      query.setMaxResults(maxResult);
     }
-    return q.list();
+    return query.list();
   }
 
   public long rowCount(boolean requireUiqueResult) {
-    Query<Long> q = session.createQuery(where(counterQuery.select(builder.count(root))));
-    log.debug(q.getQueryString());
+    Query<Long> query = session.createQuery(where(counterQuery.select(builder.count(root))));
+    log.debug(query.getQueryString());
     if (requireUiqueResult) {
-      return q.uniqueResult();
+      return query.uniqueResult();
     }
-    return q.getSingleResult();
+    return query.getSingleResult();
   }
 
   // When the records number is not big a alternative is
   // AbstractProducedQuery.uniqueElement(q.list())
   public T uniqueResult() {
-    Query<T> q = getQuery();
-    log.debug(q.getQueryString());
-    return q.uniqueResult();
+    Query<T> query = getQuery();
+    log.debug(query.getQueryString());
+    return query.uniqueResult();
   }
 }
