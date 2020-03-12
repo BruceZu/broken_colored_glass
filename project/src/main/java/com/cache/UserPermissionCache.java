@@ -161,7 +161,7 @@ public class UserPermissionCache {
   /**
    * @param remoteRolesNames: configured roles by remote Radius server or compauth server
    * @param remoteAuthType: "compRadius" or "compSSO"
-   * @param userType 'SP' provider; or 'CUST' customer.
+   * @param userType 'SP' serviceProvider; or 'CUST' serviceConsumer.
    */
   private Set<ProRoleModel> mappedRoles(
       Set<String> remoteRolesNames, String remoteAuthType, String userType) throws Exception {

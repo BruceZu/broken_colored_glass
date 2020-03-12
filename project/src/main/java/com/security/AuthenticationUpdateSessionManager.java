@@ -9,7 +9,7 @@ public interface AuthenticationUpdateSessionManager {
 
   /**
    * <pre>
-   * When an authenticated provider/customer user changed his/her own password:
+   * When an authenticated serviceProvider/serviceConsumer user changed his/her own password:
    * - change CSRF token.
    * - session ID and cookie 'JSESSIONID'.
    * - expire the original session ID.
@@ -22,7 +22,7 @@ public interface AuthenticationUpdateSessionManager {
 
   /**
    * <pre>
-   * When provider/customer user B's password is changed by other authenticated provider user A, if
+   * When serviceProvider/serviceConsumer user B's password is changed by other authenticated serviceProvider user A, if
    * user B is online, force user B logout by:
    * - remove CSRF token.
    * - invalidate user B's session and remove the Authentication from the SecurityContext.
@@ -36,8 +36,8 @@ public interface AuthenticationUpdateSessionManager {
 
   /**
    * <pre>
-   * When provider/customer user B's account is disable/deleted by other
-   *  authenticated provider user A, if user B is online, force user B logout by:
+   * When serviceProvider/serviceConsumer user B's account is disable/deleted by other
+   *  authenticated serviceProvider user A, if user B is online, force user B logout by:
    * - remove CSRF token.
    * - invalidate user B's session and remove the Authentication from the SecurityContext.
    * - clean the defined 'JSESSIONID' cookie.

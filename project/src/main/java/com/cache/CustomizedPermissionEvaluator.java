@@ -114,7 +114,7 @@ public class CustomizedPermissionEvaluator implements PermissionEvaluator {
           String remoteAuthType = (String) session.getAttribute("remoteAuthType");
           Object roleSet = session.getAttribute("rolesFromRadiusOrProSSOSAML");
           String userType =
-              ((boolean) session.getAttribute("provider"))
+              ((boolean) session.getAttribute("serviceProvider"))
                   ? USER_TYPE_PROVIDER
                   : USER_TYPE_CUSTOMER;
           if (roleSet != null

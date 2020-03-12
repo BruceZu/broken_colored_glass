@@ -1,4 +1,4 @@
-package com.coustomer.projs.rest.controller;
+package csrf;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -22,6 +22,30 @@ public class CsrfTokenController {
   private static Logger log = LogManager.getLogger(CsrfTokenController.class.getName());
 
   private AuthenticationTrustResolver resolver = null;
+  private PrjAuthProcessor authProcessor;
+
+  private static final String SP_URL = "/app/**/*";
+  private static final String SP_LOCATION = "/resources/react/index.html";
+
+  /**
+   * Show the single page of PROJ.
+   *
+   * <p>Once All JSP pages are replaced, use {@link UrlBasedViewResolver} resolver view.
+   */
+  @GetMapping(value = SP_URL)
+  public ModelAndView showIndex(
+      ModelMap model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    if (log.isDebugEnabled()) {
+      log.debug("Forward to '" + SP_LOCATION + "'");
+    }
+
+    return new ModelAndView("forward:" + SP_LOCATION, model);
+  }
+
+  @Autowired
+  void setPrjAuthProcessor(PrjAuthProcessor authProcessor) {
+    this.authProcessor = authProcessor;
+  }
 
   /**
    * <pre>
@@ -54,8 +78,8 @@ public class CsrfTokenController {
     return authen != null && !resolver.isAnonymous(authen);
   }
 
-  @GetMapping(value = "/v1/csrf", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
-  public ResponseEntity<String> get(
+  @GetMapping(value = "/v1/user/self/csrf", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
+  public ResponseEntity<String> getMyCsrf(
       NativeWebRequest webRequest, HttpServletRequest request, HttpServletResponse response)
       throws Exception {
     if (withRequiredRequestHead(request)) {
@@ -77,8 +101,64 @@ public class CsrfTokenController {
     return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
   }
 
-  @GetMapping(value = "/v1/hasloggedin", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
-  public ResponseEntity<String> get(HttpServletRequest request, HttpServletResponse response) {
+  @GetMapping(value = "/v1/user/self/usertype", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
+  public ResponseEntity<String> getMyUserType(
+      HttpServletRequest request, HttpServletResponse response) {
+    if (hasLoggedIn()) {
+      HttpSession session = request.getSession(false);
+      String userEmail = (String) session.getAttribute("user_email");
+      Integer userId = (Integer) session.getAttribute("user_id");
+
+      boolean isProviderUser = (boolean) session.getAttribute("serviceProvider");
+      String userType = isProviderUser ? USER_TYPE_PROVIDER : USER_TYPE_CUSTOMER;
+      return ResponseEntity.ok(
+          new JSONObject()
+              .put("myId", userId.toString())
+              .put("myEmail", userEmail)
+              .put("myUserType", userType)
+              .toString());
+    }
+    return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+  }
+
+  @GetMapping(value = "/v1/user/self/hasloggedin", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
+  public ResponseEntity<String> getMyLoginStatus(
+      HttpServletRequest request, HttpServletResponse response) {
     return ResponseEntity.ok(new JSONObject().put("result", hasLoggedIn()).toString());
+  }
+
+  /**
+   * <pre>
+   * In PROJ the locale only contain language info.
+   * How does PROJ work with locale at present:
+   * - Local authentication:
+   *   -- For the page got from GET /proj/login, the default selected locale language is
+   *   the default serviceProvider's locale language. If the end user selects another language
+   *   than the default one. The new option will have the highest priority
+   *   and be used till logout even serviceProvider or serviceConsumer language option is updated before
+   *   logout.
+   *
+   * - After login successfully no matter what kind of authentication. If the user did not
+   *   have a chance or did not want to change the language before login. Then now
+   *   -- For serviceProvider user: The serviceProvider language option set in
+   *   settings will be used before logout no matter serviceProvider change it or
+   *   not before logout.
+   *   -- For the serviceConsumer user: If the serviceConsumer does not prefer to use serviceProvider language.
+   *   serviceConsumer own language will be used before logout.
+   *
+   */
+  @GetMapping(value = "/v1/user/self/locale", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
+  public ResponseEntity<String> getLocale(
+      HttpServletRequest request, HttpServletResponse response) {
+    if ("XMLHttpRequest".equals(request.getHeader("X-Requested-With"))) {
+      if (hasLoggedIn()) {
+        return ResponseEntity.ok(
+            new JSONObject().put("lang", LocaleContextHolder.getLocale().getLanguage()).toString());
+      } else if (!MetaDataGenerator.isSAMLEnabled()) {
+        return ResponseEntity.ok(
+            new JSONObject().put("lang", authProcessor.getProviderLocale()).toString());
+      }
+    }
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
   }
 }
