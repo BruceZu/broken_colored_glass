@@ -26,7 +26,7 @@ public class RsaEcbCipher implements Cryption {
   // OAEPWith<digest>And<mgf>Padding for asymmetric encryption, where the digest is
   // SHA1/SHA256/384/512. Transform is not case-sensitive.
   private static final String PADDING_SCHEME = "OAEPWithSHA-512AndMGF1PADDING";
-  // SunJCE provider, cipher RSA with supported modes ECB
+  // SunJCE serviceProvider, cipher RSA with supported modes ECB
   private static final String MODE_OF_OPERATION = "ECB"; // default for asymmetric
   private static KeyPair rsaKeyPair;
   private static Cipher cipher;

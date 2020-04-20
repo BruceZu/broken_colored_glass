@@ -30,7 +30,7 @@ which is managed by Docker. So from the second time, it will be faster to start 
 
 Once the PROJ is up a pop window will appear with the login page
     'https://localhost:8444/proj/login'
-Login with admin user name: spuser and password: test123
+Login with admin user name: defaultuser and password: xxxxxx
 Google-Chrome and Firfox will be tried in turn.
 
 ##  Update HTML/CSS/JS file, reload the page to see the effective result.

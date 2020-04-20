@@ -76,11 +76,11 @@ services:
         image: mariadb
         restart: always
         environment:
-            MYSQL_ROOT_PASSWORD: 111111Qq
+            MYSQL_ROOT_PASSWORD: xxxxxx
             MYSQL_ROOT_HOST: portal
             MYSQL_DATABASE: cloudmanager
             MYSQL_USER: admin
-            MYSQL_PASSWORD: 111111Qq
+            MYSQL_PASSWORD: xxxxxx
         volumes:
             - "mysql_data:/var/lib/mysql"
         networks:

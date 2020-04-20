@@ -30,7 +30,7 @@ COPY ./docker/release/tomcat/webapps/proj/WEB-INF/classes/database.properties $C
 
 COPY ${DBMIG_CONFIG_PATH}/global_init /dbm/global_init
 COPY ${DBMIG_CONFIG_PATH}/global /dbm/global
-COPY ${DBMIG_CONFIG_PATH}/customer /dbm/customer
+COPY ${DBMIG_CONFIG_PATH}/serviceConsumer /dbm/serviceConsumer
 COPY --from=package /project/dbm/target/proj-dbm-jar-with-dependencies.jar /dbm/proj-dbm-jar-with-dependencies.jar
 COPY ./docker/tomcat/util/proj/label.conf /var/tomcat/util/proj/label.conf
 COPY ./docker/release/dbm/forDocker.config.properties /dbm/forDocker.config.properties

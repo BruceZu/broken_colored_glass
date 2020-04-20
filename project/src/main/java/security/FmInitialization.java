@@ -24,7 +24,7 @@ public class FmInitialization {
   private static String BPJ_NAME_PREFIX = "LOCAL_BPJ_";
   private static int DEFAULT_PROVIDER_ID = 1;
   private static int DEFAULT_PROVIDER_USER_ID = 10001;
-  private static String DEFAULT_PROVIDER_USER_EMAIL = "spuser";
+  private static String DEFAULT_PROVIDER_USER_EMAIL = "defaultuser";
   private static String FREQUENCY_DAILY = "1 00:00:00";
 
   private Environment env;
