@@ -34,7 +34,7 @@ for i in $@; do
     echo "there is config mirror option $i"
     # default not use company’s npm mirror registry as project default registrys
     echo "use company’s npm mirror registry as project default registrys"
-    npm config set registry https://dops-nexus.fortinet-us.com:8443/repository/fins-npm-proxy/
+    npm config set registry https://dops-nexus.compnet-us.com:8443/repository/fins-npm-proxy/
   else
     build_options+=("$i")
   fi
