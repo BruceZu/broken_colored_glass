@@ -1,12 +1,14 @@
-import proj.dao.ProRadiusRolesDao;
-import proj.dao.ProRoleDao;
-import proj.model.ProPermissionsModel;
-import proj.model.ProRadiusProRolesModel;
-import proj.model.ProRadiusRoleModel;
-import proj.model.ProRoleModel;
-import proj.service.impl.DaoUtil;
+
+import com.coustomer.projs.dao.PrjRadiusRolesDao;
+import com.coustomer.projs.dao.PrjRoleDao;
+import com.coustomer.projs.model.PrjPermissionsModel;
+import com.coustomer.projs.model.PrjRadiusPrjRolesModel;
+import com.coustomer.projs.model.PrjRadiusRoleModel;
+import com.coustomer.projs.model.PrjRoleModel;
+import com.coustomer.projs.service.impl.DaoUtil;
 import com.coustomer.pmc.dao.UserDao;
 import com.coustomer.pmc.model.UserModel;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -23,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,9 +33,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-// Since Spring 4.1, Spring cache supports JSR-107.
-// Caffeine is a high performance, near optimal caching library based on Java 8.
-// Dev5.0 can introduce them.
+/**
+ *<pre>
+ * Note: Do not access or expose the cache implement directly to couple
+ *       PROJ with cache implement closely. Instead always access cache
+ *       via CacheManager or PrjPermissionEvaluator
+ * Because currently cache implementation is based on Guava Cache.
+ * TODO:
+ * - replace Guava Cache with Caffeine Cache for performance concern.
+ * - refactor out the cache implement out of PROJ to an
+ *   independent deployed Cache service in multi PROJ nodes env.
+ *
+ */
 @Component(value = "userPermissions")
 public class UserPermissionCache {
   private static final Logger logger = LoggerFactory.getLogger(UserPermissionCache.class);
@@ -56,7 +68,7 @@ public class UserPermissionCache {
       if (obj == this) {
         return true;
       }
-      if (obj == null || !(obj instanceof RemoteKey)) {
+      if (!(obj instanceof RemoteKey)) {
         return false;
       }
 
@@ -79,50 +91,60 @@ public class UserPermissionCache {
   public static final String REMOTE_AUTH_TYPE_SSO = "compSSO";
 
   public static class CacheValue {
-    public String objectName;
-    public Integer operationId;
+    public final Integer permissionId;
+    public final String objectName;
+    public final Integer operationId;
+    public final String detail;
 
-    public CacheValue(String name, Integer id) {
-      this.objectName = name;
-      this.operationId = id;
+    @VisibleForTesting
+    public CacheValue(
+        @Nullable Integer permissionId, String objectName, Integer operationId, String detail) {
+      this.permissionId = permissionId;
+      this.objectName = objectName;
+      this.operationId = operationId;
+      this.detail = detail;
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(objectName, operationId);
+      return Objects.hash(objectName, operationId, detail);
     }
 
     @Override
-    public boolean equals(Object other) {
-      boolean result = false;
-      if (other instanceof CacheValue) {
-        CacheValue that = (CacheValue) other;
-        result =
-            Objects.equals(this.objectName, that.objectName)
-                && Objects.equals(this.operationId, that.operationId);
+    public boolean equals(Object thatObject) {
+      if (this == thatObject) {
+        return true;
       }
-      return result;
+      if (thatObject == null || getClass() != thatObject.getClass()) {
+        return false;
+      }
+      CacheValue that = (CacheValue) thatObject;
+      return Objects.equals(permissionId, that.permissionId);
+    }
+
+    public static CacheValue createCacheValue(PrjPermissionsModel permission) {
+      return new CacheValue(
+          permission.getPermissionId(),
+          permission.getObjectsName(),
+          permission.getOperations(),
+          permission.getDetail());
     }
   }
 
-  private final LoadingCache<Integer, Set<CacheValue>> byLocalId;
-  private final Cache<RemoteKey, Set<CacheValue>> byRemoteIdAndRoles;
-  private final Cache<String, Set<CacheValue>> byUserType;
+  private final LoadingCache<Integer, Set<CacheValue>> byUserIdForLocal;
+  private final Cache<RemoteKey, Set<CacheValue>> byUserIdAndRolesForRemote;
+  private final Cache<String, Set<CacheValue>> byDefaultUserTypeForRemote;
 
   @Autowired private UserDao userDao;
-  @Autowired private ProRoleDao roleDao;
+  @Autowired private PrjRoleDao roleDao;
 
-  private CacheValue getCacheValue(ProPermissionsModel permission) {
-    return new CacheValue(permission.getObjectsName(), permission.getOperations());
-  }
-
-  private Map<String, Set<ProRoleModel>> getProRolesNameBy(String userType) {
-    List<ProRoleModel> roles = roleDao.getRoles(userType);
-    Map<String, Set<ProRoleModel>> byName = new HashMap<>();
-    for (ProRoleModel role : roles) {
-      Set<ProRoleModel> set = byName.get(role.getRoleName());
+  private Map<String, Set<PrjRoleModel>> getPrjRolesNameBy(String userType) {
+    List<PrjRoleModel> roles = roleDao.getRoles(userType);
+    Map<String, Set<PrjRoleModel>> byName = new HashMap<>();
+    for (PrjRoleModel role : roles) {
+      Set<PrjRoleModel> set = byName.get(role.getRoleName());
       if (set == null) {
-        set = new HashSet<ProRoleModel>();
+        set = new HashSet<PrjRoleModel>();
         byName.put(role.getRoleName(), set);
       }
       set.add(role);
@@ -131,60 +153,60 @@ public class UserPermissionCache {
   }
 
   /**
-   * @param remoteRolesModel
+   * @param remoteRoleModels
    * @param remoteRoleName remoteRoleName map(name:ID is 1:n) remoteRoleModels each of which map
-   *     (ID:ID is 1:n) ProRadiusProRolesModels then each of which map (ID:ID is 1:1) ProRoleModel
+   *     (ID:ID is 1:n) PrjRadiusPrjRolesModels then each of which map (ID:ID is 1:1) PrjRoleModel
    */
-  private Set<ProRoleModel> getMappedProRoles(
-      List<ProRadiusRoleModel> remoteRoleModels, String remoteRoleName) {
+  private Set<PrjRoleModel> getMappedPrjRoles(
+      List<PrjRadiusRoleModel> remoteRoleModels, String remoteRoleName) {
     if (remoteRoleModels.isEmpty()) {
-      logger.warn("Unable to find Pro roles for Radius server in Pro Server.");
+      logger.warn("Unable to find PROJ roles for Radius server in PROJ Server.");
     }
-    Set<ProRoleModel> mappedProRoles = new HashSet<ProRoleModel>();
-    for (ProRadiusRoleModel rrModel : remoteRoleModels) {
+    Set<PrjRoleModel> mappedPrjRoles = new HashSet<PrjRoleModel>();
+    for (PrjRadiusRoleModel rrModel : remoteRoleModels) {
       if (rrModel.getRoleName().equalsIgnoreCase(remoteRoleName)) {
-        Set<ProRadiusProRolesModel> maps = rrModel.getProRadiusProRoles();
-        for (ProRadiusProRolesModel map : maps) {
-          mappedProRoles.add(map.getProRoleModel());
+        Set<PrjRadiusPrjRolesModel> maps = rrModel.getPrjRadiusprojRoles();
+        for (PrjRadiusPrjRolesModel map : maps) {
+          mappedPrjRoles.add(map.getPrjRoleModel());
         }
       }
     }
-    if (mappedProRoles.isEmpty()) {
+    if (mappedPrjRoles.isEmpty()) {
       logger.warn(
           "Roles [ "
               + remoteRoleName
-              + " ] exists in Radius server but there is no mapping in Pro.");
+              + " ] exists in Radius server but there is no mapping in PROJ.");
     }
-    return mappedProRoles;
+    return mappedPrjRoles;
   }
 
   /**
    * @param remoteRolesNames: configured roles by remote Radius server or compauth server
    * @param remoteAuthType: "compRadius" or "compSSO"
-   * @param userType 'SP' serviceProvider; or 'CUST' serviceConsumer.
+   * @param userType 'SP' provider; or 'CUST' customer.
    */
-  private Set<ProRoleModel> mappedRoles(
-      Set<String> remoteRolesNames, String remoteAuthType, String userType) throws Exception {
-    Set<ProRoleModel> result = new HashSet<ProRoleModel>();
-    Map<String, Set<ProRoleModel>> ProRolesByName = getProRolesNameBy(userType);
+  private Set<PrjRoleModel> mappedRoles(
+      Set<String> remoteRolesNames, String remoteAuthType, String userType) {
+    Set<PrjRoleModel> result = new HashSet<PrjRoleModel>();
+    Map<String, Set<PrjRoleModel>> projRolesByName = getPrjRolesNameBy(userType);
     for (String remoteRoleName : remoteRolesNames) {
       result.addAll(
-          ProRolesByName.containsKey(remoteRoleName)
-              ? ProRolesByName.get(remoteRoleName)
-              : getMappedProRoles(
-                  ((ProRadiusRolesDao) DaoUtil.getDao(ProRadiusRolesDao.class, null))
+          projRolesByName.containsKey(remoteRoleName)
+              ? projRolesByName.get(remoteRoleName)
+              : getMappedPrjRoles(
+                  ((PrjRadiusRolesDao) DaoUtil.getDao(PrjRadiusRolesDao.class, null))
                       .getAllRadiusRoles(remoteAuthType),
                   remoteRoleName));
     }
     if (result.isEmpty()) {
-      logger.warn("Unable to find matching Pro roles fromRadius Server.");
+      logger.warn("Unable to find matching PROJ roles fromRadius Server.");
     }
     return result;
   }
 
   public UserPermissionCache() {
     // Made it configurable for end user to tune the performance.
-    byLocalId =
+    byUserIdForLocal =
         CacheBuilder.newBuilder()
             .expireAfterAccess(60, TimeUnit.MINUTES)
             .concurrencyLevel(3)
@@ -203,18 +225,18 @@ public class UserPermissionCache {
                     if (userModel.getRoles().isEmpty()) {
                       Hibernate.initialize(userModel.getRoles());
                     }
-                    Set<ProRoleModel> roles = userModel.getRoles();
-                    for (ProRoleModel role : roles) {
-                      Set<ProPermissionsModel> permissions = role.getPermissions();
-                      for (ProPermissionsModel permission : permissions) {
-                        cached.add(getCacheValue(permission));
+                    Set<PrjRoleModel> roles = userModel.getRoles();
+                    for (PrjRoleModel role : roles) {
+                      Set<PrjPermissionsModel> permissions = role.getPermissions();
+                      for (PrjPermissionsModel permission : permissions) {
+                        cached.add(CacheValue.createCacheValue(permission));
                       }
                     }
                     return cached;
                   }
                 });
 
-    byRemoteIdAndRoles =
+    byUserIdAndRolesForRemote =
         CacheBuilder.newBuilder()
             .expireAfterAccess(60, TimeUnit.MINUTES)
             .concurrencyLevel(3)
@@ -222,7 +244,7 @@ public class UserPermissionCache {
             .recordStats()
             .maximumSize(1000)
             .build();
-    byUserType =
+    byDefaultUserTypeForRemote =
         CacheBuilder.newBuilder()
             .expireAfterAccess(60, TimeUnit.MINUTES)
             .concurrencyLevel(3)
@@ -249,12 +271,12 @@ public class UserPermissionCache {
                 + " seconds");
   }
 
-  private Set<CacheValue> permissionsCacheValueOf(Iterable<ProRoleModel> roles) {
+  private Set<CacheValue> permissionsCacheValueOf(Iterable<PrjRoleModel> roles) {
     Set<CacheValue> result = new HashSet<>();
-    for (ProRoleModel role : roles) {
-      Set<ProPermissionsModel> permissions = role.getPermissions();
-      for (ProPermissionsModel permission : permissions) {
-        result.add(getCacheValue(permission));
+    for (PrjRoleModel role : roles) {
+      Set<PrjPermissionsModel> permissions = role.getPermissions();
+      for (PrjPermissionsModel permission : permissions) {
+        result.add(CacheValue.createCacheValue((permission)));
       }
     }
     return result;
@@ -275,15 +297,15 @@ public class UserPermissionCache {
 
   public String statisticInfo() {
     StringBuilder sb = new StringBuilder();
-    CacheStats stats = byLocalId.stats();
+    CacheStats stats = byUserIdForLocal.stats();
     if (!stats.equals(new CacheStats(0, 0, 0, 0, 0, 0))) {
       cacheStatsToString(sb, stats, "Local User-Permissions");
     }
-    stats = byRemoteIdAndRoles.stats();
+    stats = byUserIdAndRolesForRemote.stats();
     if (!stats.equals(new CacheStats(0, 0, 0, 0, 0, 0))) {
       cacheStatsToString(sb, stats, "Remote compRadius/compSSOSAML Mapped User-Permissions");
     }
-    stats = byUserType.stats();
+    stats = byDefaultUserTypeForRemote.stats();
     if (!stats.equals(new CacheStats(0, 0, 0, 0, 0, 0))) {
       cacheStatsToString(sb, stats, "Remote User Default Permissions");
     }
@@ -292,7 +314,7 @@ public class UserPermissionCache {
 
   @Transactional(readOnly = true)
   public Set<CacheValue> get(Integer userId) throws ExecutionException {
-    return byLocalId.get(userId);
+    return byUserIdForLocal.get(userId);
   }
 
   @Transactional(readOnly = false) // need change Schema "use coustomerpmcdb"
@@ -305,11 +327,11 @@ public class UserPermissionCache {
     validUserType(userType);
     validAuthType(remoteAuthType);
 
-    return byRemoteIdAndRoles.get(
+    return byUserIdAndRolesForRemote.get(
         new RemoteKey(remoteUserId, remoteRoles),
         new Callable<Set<CacheValue>>() {
-          // Todo: Add query cache on ProRoleDaoImpl.getRoles() and
-          // ProRadiusRolesDaoImpl.getAllRadiusRoles()
+          // Todo: Add query cache on PrjRoleDaoImpl.getRoles() and
+          // PrjRadiusRolesDaoImpl.getAllRadiusRoles()
           @Override
           public Set<CacheValue> call() throws Exception {
             return permissionsCacheValueOf(mappedRoles(remoteRoles, remoteAuthType, userType));
@@ -320,7 +342,7 @@ public class UserPermissionCache {
   @Transactional(readOnly = true)
   public Set<CacheValue> getDefault(final String userType) throws ExecutionException {
     validUserType(userType);
-    return byUserType.get(
+    return byDefaultUserTypeForRemote.get(
         userType,
         new Callable<Set<CacheValue>>() {
           @Override
@@ -331,44 +353,84 @@ public class UserPermissionCache {
   }
 
   public void invalidateLocal(Integer userId) {
-    byLocalId.invalidate(userId);
-  }
-
-  public void invalidateLocal(UserModel user) {
-    if (user != null) {
-      byLocalId.invalidate(user.getUserId());
-    }
+    byUserIdForLocal.invalidate(userId);
   }
 
   public void invalidateAllLocal(Iterable<Integer> keys) {
-    byLocalId.invalidateAll(keys);
+    byUserIdForLocal.invalidateAll(keys);
   }
 
+  // Note: use this method only in test case using local authentication
+  @Deprecated
   public void invalidateAllLocal() {
-    byLocalId.invalidateAll();
-  }
-
-  public void invalidateAllLocal(Set<UserModel> users) {
-    if (users != null && !users.isEmpty()) {
-      Set<Integer> keys = new HashSet<>();
-      for (UserModel user : users) {
-        keys.add(user.getUserId());
-      }
-      byLocalId.invalidateAll(keys);
-    }
+    byUserIdForLocal.invalidateAll();
   }
 
   /**
-   * The remote user - roles relations exist only in cache. So for any update that can change the
-   * computed user-permissions result, there is no way to know which remote user is affected, So it
-   * need to invalidate all cached remote users' permissions.
+   * <pre>
+   * Scenario: remote authentication + remote user has configured remote role name(s):
+   * remote user cache maybe affected by the following event and need to refresh:
+   * - create remote/PROJ role: it is possible that the remote role's name has already be
+   *     configured on the remote authentication server for some online user.
+   * - delete the remote/PROJ role.
+   * - the remote role is unchanged but the 'remote role -PROJ role' association is updated.
+   * - the PROJ role is unchanged but the 'PROJ role - permission(s)' association is updated
+   * - the remote/PROJ role's name is updated
    */
-  public void invalidateAllRemoteUserPermissions() {
-    byRemoteIdAndRoles.invalidateAll();
+  public boolean invalidateRemoteIdAndRolesCacheWith(String roleName) {
+    final Boolean[] findAndFreshed = new Boolean[1];
+    findAndFreshed[0] = false;
+    byUserIdAndRolesForRemote
+        .asMap()
+        .keySet()
+        .parallelStream()
+        .forEach(
+            k -> {
+              k.remoteRoles
+                  .parallelStream()
+                  .forEach(
+                      configuredRoleName -> {
+                        if (configuredRoleName.equalsIgnoreCase(roleName)) {
+                          byUserIdAndRolesForRemote.invalidate(k);
+                          findAndFreshed[0] = true;
+                        }
+                      });
+            });
+
+    return findAndFreshed[0];
+  }
+
+  /**
+   * <pre>
+   * When it is remote authentication and the remote user has remote role(s),
+   * if some PROJ permission
+   * is updated and some association of 'PROJ role - this permission' exists.
+   * it need to refresh cache:
+   * if the online user:
+   *  - is using the related role directly via roleName
+   *  - is using the related role via 'remote role - PROJ role' association if there is any.
+   * Need call this method to invalid affected all `remote user - permission` cache entry
+   */
+  public void invalidateRemoteIdAndRolesCacheWith(PrjPermissionsModel toBeUpdatedPermissionModel) {
+    if (toBeUpdatedPermissionModel.getPrjRoleModel().isEmpty()) {
+      return;
+    }
+    byUserIdAndRolesForRemote
+        .asMap()
+        .forEach(
+            (key, set) -> {
+              set.parallelStream()
+                  .forEach(
+                      v -> {
+                        if (v.permissionId.equals(toBeUpdatedPermissionModel.getPermissionId())) {
+                          byUserIdAndRolesForRemote.invalidate(key);
+                        }
+                      });
+            });
   }
 
   public void invalidateAllDefaultOf(String userType) {
     validUserType(userType);
-    byUserType.invalidate(userType);
+    byDefaultUserTypeForRemote.invalidate(userType);
   }
 }
