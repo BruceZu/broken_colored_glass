@@ -56,12 +56,12 @@ public class ErrorHandler {
     // ROLE_ANONYMOUS)
     // Spring will throw AccessDeniedException in AffirmativeBased.decide() when anonymousUser
     // try to call any API, except 2 cases:
-    //  - 'POST /fpc/login' for local authentication
-    //  - 'POST /fpc/login/ssologin' for remote authentication ,
+    //  - 'POST /proj/login' for local authentication
+    //  - 'POST /proj/login/ssologin' for remote authentication ,
     // and for the API the back end controller or its method require
     // @PreAuthorize("isAuthenticated()")  or @PreAuthorize( "hasPermission('xxxx', yyy),... ）
     //
-    // While FPC need to know the AccessDeniedException is caused by unauthorized 401 or forbidden
+    // While PROJ need to know the AccessDeniedException is caused by unauthorized 401 or forbidden
     // 403. This is decided by user has logged in or not:
     int responseStatusCode =
         CommonRequestController.hasLoggedIn()

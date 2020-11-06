@@ -1,38 +1,32 @@
-package tls;
 
-import static  tool.RuningEnv.isDockerRuningInBackProjectVm;
-import static  tool.RuningEnv.isRunningInsideDocker;
+import static com.coustomer.projs.util.PrjHttpsConnection.callRestAPI;
+import static com.coustomer.tool.PrjRuningEnv.isDockerRuningInBackProjectVm;
+import static com.coustomer.tool.PrjRuningEnv.isRunningInsideDocker;
 
+import com.coustomer.projs.util.PrjHttpsConnection.RestAPIEcho;
 import com.coustomer.projs.util.MetaDataGenerator;
-import com.google.common.base.Charsets;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonSyntaxException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.Optional;
-import java.util.function.Consumer;
-import javax.net.ssl.HttpsURLConnection;
+import javax.annotation.Nullable;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.NotAllowedException;
+import org.apache.http.client.utils.URIBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -43,10 +37,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 
 /** Used by PROJ docker in BPJ VM only */
 @Controller
-public class HttpClientController {
+public class PrjLocalAdminDefaultController {
   private static Logger log = LogManager.getLogger(PrjLocalAdminDefaultController.class);
   private static final String DEFAULT_AUTHEN_URL = "/adminuser/local/default";
-  private static final String BPJ_PROJ_DOCKER_GATEWAY_IP = "106.2.3.49";
+  private static final String BPJ_PROJ_DOCKER_GATEWAY_IP = "169.254.255.49";
 
   private static final String BPJ_REQ_XSRF_TOKEN_KEY = "XSRF-TOKEN";
   private static final String BPJ_REQ_SESSION_KEY = "CURRENT_SESSION";
@@ -54,7 +48,9 @@ public class HttpClientController {
   private static final String PROTOCOL = "https";
   private static final int PORT = 443;
   private static final String HOSTNAME = getFMHostIp();
-  private static final String BPJ_HEART_BEAT_RESOUCE_PATH = "/cgi-bin/module/HeartBeat";
+  private static final String BPJ_HEART_BEAT_RESOUCE_PATH = "/cgi-bin/module/flatui_proxy";
+
+  public static final String PROXIED_BPJ_USER_KEY = "proxied_managerapp_user";
 
   /**
    * <pre>
@@ -64,7 +60,7 @@ public class HttpClientController {
    * - non-VM
    * - common non-Docker/VM
    */
-  private static boolean inBackProjectVm() {
+  public static boolean inBackProjectVm() {
     return isRunningInsideDocker() && isDockerRuningInBackProjectVm();
   }
 
@@ -92,11 +88,11 @@ public class HttpClientController {
    * https://github.com/docker/compose/issues/6569
    *
    * Gateway value is decided by the docker compose yml
-   * 'networks>app_net>ipam>config>': 'subnet: "106.2.3.48/28"' according to
+   * 'networks>app_net>ipam>config>': 'subnet: "169.254.255.48/28"' according to
    * design document
    * https://pmdb.compnet.com/ProjectManagement/viewDocument.php?id=9360
    *
-   * Currently its default value is "106.2.3.49" checked by 'docker inspect'
+   * Currently its default value is "169.254.255.49" checked by 'docker inspect'
    * The default behavior might change in the future.
    */
   private static String getFMHostIp() {
@@ -114,7 +110,8 @@ public class HttpClientController {
       return false;
     }
 
-    boolean hasSession = false, hasXsrfToken = false;
+    boolean hasSession = false;
+    boolean hasXsrfToken = false;
     for (Cookie c : cookies) {
       if (c.getName().equalsIgnoreCase(BPJ_REQ_XSRF_TOKEN_KEY)) {
         hasXsrfToken = true;
@@ -160,33 +157,128 @@ public class HttpClientController {
 
   /**
    * According to the design document, request payload format is: '{"gSessionInfo":{"type":"sys"}}'
+   * '{"url":"/gui/sys/session" , "method": "get"}'
    */
-  private static JsonElement getBPJHeartBeatRequestPayLoad() {
-    JsonObject value = new JsonObject();
-    value.addProperty("type", "sys");
-
+  private static JsonElement getBPJSessionValidateRequestPayLoad() {
     JsonObject payload = new JsonObject();
-    payload.add("gSessionInfo", value);
+    payload.addProperty("url", "/gui/sys/session");
+    payload.addProperty("method", "get");
     return payload;
+  }
+
+  private static boolean logErrorReturnFalse(String error) {
+    return logErrorReturnFalse(error, null);
+  }
+
+  private static boolean logErrorReturnFalse(String error, @Nullable RuntimeException exception) {
+    String errorMessage =
+        "Error: BPJ API " + BPJ_HEART_BEAT_RESOUCE_PATH + " Response payload:" + error;
+
+    if (exception == null) {
+      log.error(errorMessage);
+    } else {
+      log.error(errorMessage, exception);
+    }
+    return false;
   }
 
   /**
    * Response(with 200) message format is like:
    *
-   * <p>{ "data":{ "gSessionInfo":{ "time_left":814, "timestamp":1583194561, "valid":true } } }
+   * <pre>
+   * <code>
+   * {
+   *   "result":[
+   *      {
+   *         "data":{
+   *            "admin_adom":"root",
+   *            "admin_prof":"Super_User",
+   *            "admin_user":"admin",
+   *            "adom_list":[
+   *
+   *            ],
+   *            "adom_override":0,
+   *            "current_adom_name":"root",
+   *            "login_user":"admin",
+   *            "time_left":283,
+   *            "timestamp":1597340634,
+   *            "valid":1
+   *         },
+   *         "id":null,
+   *         "status":{
+   *            "code":0,
+   *            "message":""
+   *         },
+   *         "url":"/gui/sys/session"
+   *      }
+   *   ]
+   * }
+   * </code>
+   * </pre>
+   *
+   ** <pre>
+   * Check
+   *
+   * - response code
+   *
+   * - response data, recommended by BPJ team 'Haijun Qiao <hjqiao@compnet.com>'
+   *
+   **
+   * If BPJ user session is valid then keep its name, which will be used in audit
+   * log.
    */
-  private static boolean validBPJHeartBeatResponse(RestAPIEcho response) {
+  private static boolean validBPJHeartBeatResponseAndKeepValidBPJUserName(
+      HttpServletRequest req, RestAPIEcho response) {
     log.info(
         String.format(
             "BPJ heartbreat call response code: %d, message: %s ",
             response.code, response.message));
     if (response.code != HttpURLConnection.HTTP_OK) {
-      log.error(response.message);
+      log.error("Resonse Code:" + response.code);
       return false;
     }
-    JsonObject jobject =
-        response.message.getAsJsonObject().getAsJsonObject("data").getAsJsonObject("gSessionInfo");
-    return Boolean.valueOf(jobject.get("valid").getAsString()).booleanValue();
+
+    try {
+      JsonElement result = response.message.getAsJsonObject().get("result");
+      if (result == null) {
+        return logErrorReturnFalse("Has not the member with the specified 'result'");
+      }
+
+      JsonArray array = result.getAsJsonArray();
+      if (array.size() == 0) {
+        return logErrorReturnFalse("'result' array is empty");
+      }
+      JsonElement data = array.get(0).getAsJsonObject().get("data");
+      if (data == null) {
+        return logErrorReturnFalse("Has not the member with the specified 'data'");
+      }
+      JsonElement valid = data.getAsJsonObject().get("valid");
+      if (valid == null) {
+        return logErrorReturnFalse("Has not the member with the specified 'valid'");
+      }
+
+      int value = -1;
+      try {
+        value = valid.getAsInt();
+      } catch (ClassCastException e) {
+        return logErrorReturnFalse("'valid' value is not expected integer type");
+      }
+      if (value == 1) {
+        JsonElement loginUser = data.getAsJsonObject().get("login_user");
+        String managerappUser = loginUser.getAsString().trim();
+        if (!managerappUser.isEmpty()) {
+          req.setAttribute(PROXIED_BPJ_USER_KEY, managerappUser);
+        }
+      }
+      return value == 1;
+
+    } catch (JsonSyntaxException e) {
+      return logErrorReturnFalse("JSON syntax exception", e);
+    } catch (JsonParseException e) {
+      return logErrorReturnFalse("Failure in parsing", e);
+    } catch (IllegalStateException e) {
+      return logErrorReturnFalse("Value is not expected JSON type ", e);
+    }
   }
 
   /**
@@ -200,13 +292,18 @@ public class HttpClientController {
     if (!isValidBPJHttpServletRequest(req)) {
       return false;
     }
-    return validBPJHeartBeatResponse(
+    return validBPJHeartBeatResponseAndKeepValidBPJUserName(
+        req,
         callRestAPI(
-            new URI(PROTOCOL, null, HOSTNAME, PORT, BPJ_HEART_BEAT_RESOUCE_PATH, null, null)
-                .toURL(),
+            new URIBuilder()
+                .setScheme(PROTOCOL)
+                .setHost(HOSTNAME)
+                .setPort(PORT)
+                .setPath(BPJ_HEART_BEAT_RESOUCE_PATH)
+                .build(),
             HttpMethod.POST,
             10000,
-            Optional.of(getBPJHeartBeatRequestPayLoad()),
+            Optional.of(getBPJSessionValidateRequestPayLoad()),
             (con) ->
                 con.setRequestProperty(
                     HttpHeaders.COOKIE, buildSessionCookie(req, BPJ_REQ_SESSION_KEY)),
@@ -214,76 +311,6 @@ public class HttpClientController {
                 con.setRequestProperty(
                     BPJ_REQ_XSRF_TOKEN_KEY,
                     buildXsrfTokenHeaderValue(req, BPJ_REQ_XSRF_TOKEN_KEY))));
-  }
-
-  public static class RestAPIEcho {
-    /** status code from an HTTP response message. */
-    int code;
-
-    JsonElement message;
-
-    public RestAPIEcho() {};
-
-    public RestAPIEcho(int code, JsonElement message) {
-      this.code = code;
-      this.message = message;
-    }
-  }
-  /**
-   * @param url
-   * @param mthod
-   * @param timeoutInMilliseconds
-   * @param payload
-   * @return
-   */
-  @SafeVarargs
-  public static RestAPIEcho callRestAPI(
-      URL url,
-      HttpMethod mthod,
-      int timeoutInMilliseconds,
-      Optional<JsonElement> payload,
-      Consumer<URLConnection>... requestPropertyConsumers) {
-    HttpsURLConnection con = null;
-    RestAPIEcho result = new RestAPIEcho();
-    try {
-      con = (HttpsURLConnection) url.openConnection();
-      con.setRequestMethod(mthod.toString());
-      con.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_UTF8_VALUE);
-      con.setRequestProperty(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_UTF8_VALUE);
-      for (Consumer<URLConnection> consumer : requestPropertyConsumers) {
-        consumer.accept(con);
-      }
-      con.setDoInput(true);
-      con.setConnectTimeout(timeoutInMilliseconds);
-
-      if (payload.isPresent()) {
-        con.setDoOutput(true);
-        try (OutputStreamWriter out =
-            new OutputStreamWriter(con.getOutputStream(), Charsets.UTF_8); ) {
-          out.write(payload.get().toString());
-          out.flush();
-        }
-      }
-
-      try (BufferedReader readIn =
-          new BufferedReader(new InputStreamReader(con.getInputStream(), Charsets.UTF_8))) {
-        result.code = con.getResponseCode();
-
-        String str;
-        StringBuilder content = new StringBuilder(1024);
-        while ((str = readIn.readLine()) != null) {
-          content.append(str);
-        }
-        result.message = new JsonParser().parse(content.toString());
-      }
-    } catch (IOException excep) {
-      log.error(excep);
-    } finally {
-      if (con != null) {
-        con.disconnect();
-      }
-    }
-    return result;
   }
 
   private class WrappedRequest extends HttpServletRequestWrapper {
@@ -295,11 +322,11 @@ public class HttpClientController {
     public String getParameter(String name) {
       if (name.equalsIgnoreCase(
           UsernamePasswordAuthenticationFilter.SPRING_SECURITY_FORM_USERNAME_KEY)) {
-        return "defaultuser";
+        return "spuser";
       }
       if (name.equalsIgnoreCase(
           UsernamePasswordAuthenticationFilter.SPRING_SECURITY_FORM_PASSWORD_KEY)) {
-        return "xxxxxx";
+        return "test123";
       }
       return this.getRequest().getParameter(name);
     }
@@ -343,6 +370,8 @@ public class HttpClientController {
       authenticator.setRequiresAuthenticationRequestMatcher(
           new AntPathRequestMatcher("/login", "POST"));
       authenticator.setPostOnly(true);
+      req.getSession(false)
+          .setAttribute(PROXIED_BPJ_USER_KEY, req.getAttribute(PROXIED_BPJ_USER_KEY));
     }
   }
 }
