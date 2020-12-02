@@ -1,5 +1,12 @@
- 
- 
+
+import static com.coustomer.projs.controller.provider.PrjscompManagerController.performAddcompmanager;
+
+import com.coustomer.projs.dao.impl.util.QueryWrapper;
+import com.coustomer.projs.model.PrjcompmanagerModel;
+import com.coustomer.projs.service.PrjcompmanagerService;
+import com.coustomer.projs.util.security.AesOfbCipher;
+import com.coustomer.pmc.service.ServiceProviderService;
+import com.coustomer.tool.PrjRuningEnv;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.Optional;
@@ -19,12 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 /** Initialization work for Docker PROJ in compManager virtual machine environment */
 @PropertySource("classpath:managerapp.properties")
 @Component
-public class FmInitialization {
-  private static final Logger logger = LoggerFactory.getLogger(FmInitialization.class);
+public class InitBackProjectConfigure {
+  private static final Logger logger = LoggerFactory.getLogger(InitBackProjectConfigure.class);
   private static String BPJ_NAME_PREFIX = "LOCAL_BPJ_";
   private static int DEFAULT_PROVIDER_ID = 1;
   private static int DEFAULT_PROVIDER_USER_ID = 10001;
-  private static String DEFAULT_PROVIDER_USER_EMAIL = "defaultuser";
+  private static String DEFAULT_PROVIDER_USER_EMAIL = "default-admin";
   private static String FREQUENCY_DAILY = "1 00:00:00";
 
   private Environment env;
@@ -56,21 +63,17 @@ public class FmInitialization {
   }
 
   private PrjcompmanagerModel initPrjcompmanagerModel() throws GeneralSecurityException {
-    String managerappVmPassword = env.getProperty("managerapp.vm.user.password");
-    Optional<String> plainTextmanagerappVmPassword = AesOfbCipher.getInstance().decrypt(managerappVmPassword);
-    if (!plainTextmanagerappVmPassword.isPresent()) {
-      throw new RuntimeException("Failed to decrypt the configured password");
-    }
-    String managerappVmIp = env.getProperty("managerapp.vm.ip");
-    int managerappVmPortJson = Integer.valueOf(env.getProperty("managerapp.vm.port.json"));
+    String managerappVmPassword = getHostBackProjectVmPassword(env);
+    String managerappVmIp = getHostBackProjectVmInnerIp(env);
+    int managerappVmPortJson = getHostBackProjectVmPortJson(env);
     int managerappVmPortXml = Integer.valueOf(env.getProperty("managerapp.vm.port.xml"));
-    String managerappVmUserName = env.getProperty("managerapp.vm.user.name");
+    String managerappVmUserName = getHostBackProjectVmUserName(env);
     String managerappName = getBackProjectName(managerappVmIp);
 
     PrjcompmanagerModel model = new PrjcompmanagerModel();
     model.setcompManagerName(managerappName);
     model.setAdminUserName(managerappVmUserName);
-    model.setAdminPassword(plainTextmanagerappVmPassword.get());
+    model.setAdminPassword(managerappVmPassword);
     model.setIpAddress(managerappVmIp);
     model.setFrequencyValue(FREQUENCY_DAILY);
     model.setPortNumber(managerappVmPortJson);
@@ -82,7 +85,7 @@ public class FmInitialization {
 
   private void createBackProjectRecord() throws IOException, GeneralSecurityException {
     JSONObject re =
-        performAddortimanager(
+        performAddcompmanager(
             initPrjcompmanagerModel(),
             DEFAULT_PROVIDER_ID,
             DEFAULT_PROVIDER_USER_ID,
@@ -108,10 +111,34 @@ public class FmInitialization {
     return records >= 1;
   }
 
+  /** BPJ existence checking need to be in the same transaction with BPJ creating */
   private void initializeBackProject() throws IOException, GeneralSecurityException {
     if (!isExist()) {
       createBackProjectRecord();
     }
+  }
+
+  public static String getHostBackProjectVmUserName(Environment env) {
+    return env.getProperty("managerapp.vm.user.name");
+  }
+
+  public static String getHostBackProjectVmPassword(Environment env) throws GeneralSecurityException {
+    String managerappVmPassword = env.getProperty("managerapp.vm.user.password");
+    Optional<String> plainTextmanagerappVmPassword = AesOfbCipher.getInstance().decrypt(managerappVmPassword);
+    if (!plainTextmanagerappVmPassword.isPresent()) {
+      throw new RuntimeException(
+          "Failed to decrypt the configured password of BPJ build-in admin user for PROJ docker");
+    }
+
+    return plainTextmanagerappVmPassword.get();
+  }
+
+  public static String getHostBackProjectVmInnerIp(Environment env) {
+    return env.getProperty("managerapp.vm.ip");
+  }
+
+  public static int getHostBackProjectVmPortJson(Environment env) {
+    return Integer.valueOf(env.getProperty("managerapp.vm.port.json"));
   }
 
   @EventListener
