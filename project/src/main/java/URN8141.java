@@ -2,7 +2,7 @@
 import org.apache.commons.lang.NotImplementedException;
 
 /** <a href https://tools.ietf.org/html/rfc8141> RFC8141 </a> compliant URNs. */
-public class URN1841 {
+public class URN8141 {
   /**
    * <pre>
    * "

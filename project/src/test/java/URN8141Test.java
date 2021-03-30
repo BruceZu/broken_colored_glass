@@ -1,10 +1,10 @@
 
-import static URN1841.ASSIGNED_NAME;
-import static URN1841.NID;
-import static URN1841.NSS;
-import static URN1841.PCHAR;
-import static URN1841.RQ_COMPONENTS;
-import static URN1841.URN_RFC8141;
+import static URN8141.ASSIGNED_NAME;
+import static URN8141.NID;
+import static URN8141.NSS;
+import static URN8141.PCHAR;
+import static URN8141.RQ_COMPONENTS;
+import static URN8141.URN_RFC8141;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 
-public class URN1841Test {
+public class URN8141Test {
   private static Logger log = LoggerFactory.getLogger(TestURNValidator.class);
   // University Washington cases:
   private static String IDP_ENTITY_ID_1 = "urn:mace:incommon:washington.edu";
