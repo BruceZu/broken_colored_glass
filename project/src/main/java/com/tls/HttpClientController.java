@@ -388,7 +388,7 @@ public class PrjLocalAdminDefaultController {
       }
       if (name.equalsIgnoreCase(
           UsernamePasswordAuthenticationFilter.SPRING_SECURITY_FORM_PASSWORD_KEY)) {
-        return "test123";
+        return "xxxxx";
       }
       return this.getRequest().getParameter(name);
     }
