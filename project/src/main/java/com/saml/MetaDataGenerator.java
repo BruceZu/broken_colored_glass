@@ -1,12 +1,17 @@
-package saml;
+package saml
+
+import static com.coustomer.tool.PrjRuningEnv.getConfigPathInVMPrjDocker;
+import static com.coustomer.tool.PrjRuningEnv.isDockerRuningInPrjVm;
 
 import com.coustomer.projs.db.PrjDBConnection;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.cert.CertificateException;
 import java.sql.Connection;
@@ -15,6 +20,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import javax.servlet.ServletContext;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jfree.util.Log;
@@ -37,8 +43,25 @@ import org.springframework.stereotype.Component;
 public class MetaDataGenerator {
   private static final Logger logger = LogManager.getLogger(MetaDataGenerator.class);
   private static final String CLASS_PATH = "/WEB-INF/classes";
-  private static final String RESOURCE_IDP = "/spring/metadata/idp.xml";
-  private static final String RESOURCE_SP = "/spring/metadata/sp.xml";
+  private static final String IDP_FILE_NAME = "idp.xml";
+  private static final String SP_FILE_NAME = "sp.xml";
+
+  private static final String RESOURCE_IDP =
+      CLASS_PATH + "/spring/metadata" + File.separator + IDP_FILE_NAME;
+  private static final String RESOURCE_SP =
+      CLASS_PATH + "/spring/metadata" + File.separator + SP_FILE_NAME;
+
+  private static String PERSIST_IDP = null;
+  private static String PERSIST_SP = null;
+
+  static {
+    if (isDockerRuningInPrjVm()) {
+      String persistentRoot = getConfigPathInVMPrjDocker().toString();
+      PERSIST_IDP = persistentRoot + File.separator + IDP_FILE_NAME;
+      PERSIST_SP = persistentRoot + File.separator + SP_FILE_NAME;
+    }
+  }
+
   private ServletContext servletContext;
 
   @Autowired
@@ -46,46 +69,10 @@ public class MetaDataGenerator {
     this.servletContext = servletContext;
   }
 
-  /**
-   * <pre >
-   * Logic: PROJ only support one serviceProvider now.
-   * the value `SSO` of coustomerpmcdb.proj_sso_saml_profile.sso_enabled means it is remote not local
-   * authentication.
-   * when it is SAML there is one record in table
-   * coustomerpmcdb.proj_sso_saml_profile else there is not record.
-   * May 14, 2018.
-   */
-  public static boolean isSAMLEnabled() {
-    boolean isSAMLEnabled = false;
-    try (Statement stmt = PrjDBConnection.getInstance().getConnection().createStatement(); ) {
-      ResultSet rs = stmt.executeQuery("SELECT sso_enabled FROM coustomerpmcdb.pmc_service_serviceProvider;");
-
-      while (rs.next()) {
-        if (rs.getBoolean(1)) {
-          isSAMLEnabled = true;
-          break;
-        }
-      }
-      if (isSAMLEnabled) {
-        rs = stmt.executeQuery("SELECT count(sso_id) as size FROM coustomerpmcdb.proj_sso_saml_profile;");
-        while (rs.next()) {
-          return rs.getInt(1) != 0;
-        }
-      }
-
-      return false;
-    } catch (Exception e) {
-      logger.error("Failed to get authentication info of PROJ", e);
-      return false;
-    }
+  public enum SamlConfigureFile {
+    IDP,
+    SP
   }
-
-  public boolean provideIdpLogoutServiceEndpointUrl() {
-    return !getIdpConfig().getSingleLogout().trim().isEmpty();
-  }
-
-  public static final String IDP = CLASS_PATH + RESOURCE_IDP;
-  public static final String SP = CLASS_PATH + RESOURCE_SP;
 
   public static class SAMLSecurityCondition implements Condition {
     @Override
@@ -114,10 +101,10 @@ public class MetaDataGenerator {
     public Resource getIDPResource() throws Exception {
       try {
         Path idpPath = null;
-        if (servletContext.getResource(IDP) == null) {
+        if (!isExistingSAMLconfigOf(SamlConfigureFile.IDP, servletContext)) {
           idpPath = generateIdpMetaData();
         } else {
-          idpPath = pathOf(IDP);
+          idpPath = fileSystemPathOf(SamlConfigureFile.IDP, servletContext);
         }
         return new FilesystemResource(idpPath.toUri());
       } catch (IOException | URISyntaxException | ResourceException e) {
@@ -130,10 +117,10 @@ public class MetaDataGenerator {
     public Resource getSPResource() throws Exception {
       try {
         Path spPath = null;
-        if (servletContext.getResource(SP) == null) {
+        if (!isExistingSAMLconfigOf(SamlConfigureFile.SP, servletContext)) {
           spPath = generateSpMetaData();
         } else {
-          spPath = pathOf(SP);
+          spPath = fileSystemPathOf(SamlConfigureFile.SP, servletContext);
         }
         return new FilesystemResource(spPath.toUri());
       } catch (IOException | URISyntaxException | ResourceException e) {
@@ -145,7 +132,6 @@ public class MetaDataGenerator {
 
   // Todo: user jdbc connection pool
   private PrjIdpConfig getIdpConfig() {
-
     PrjIdpConfig idpConfig = null;
     logger.info("Building the idp config ");
 
@@ -187,14 +173,11 @@ public class MetaDataGenerator {
 
   // Todo: user jdbc connection pool
   private PrjSpConfig getSpConfig() {
-
     PrjSpConfig spConfig = null;
 
     logger.info("Building the sp config ");
     String query = "SELECT Sso_Sp_Entity_Id, Sso_Audience_Url FROM proj_sso_saml_profile  limit 1";
-
     try (Statement stmt = PrjDBConnection.getInstance().getConnection().createStatement(); ) {
-
       ResultSet rs = stmt.executeQuery(query);
       spConfig = new PrjSpConfig();
       while (rs.next()) {
@@ -272,7 +255,7 @@ public class MetaDataGenerator {
     sb.append(idpConfig.getLoginUrlRedirect());
     sb.append("\"/>\n");
 
-    if (idpConfig.getSingleLogout().trim().isEmpty()) {
+    if (StringUtils.isBlank(idpConfig.getSingleLogout())) {
       logger.warn("'IDP Logout Service Endpoint' is not provided, so no logout function.");
     } else {
       sb.append(
@@ -294,35 +277,17 @@ public class MetaDataGenerator {
     sb.append("</EntityDescriptor>\n");
 
     logger.info("The idp configuration " + sb.toString());
+    Path path = fileSystemPathOf(SamlConfigureFile.IDP, servletContext);
+    prepareDirectoryFor(path);
     return Files.write(
-        pathOf(IDP),
+        path,
         sb.toString().getBytes(),
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING);
   }
 
-  private Path pathOf(String file) throws URISyntaxException, IOException {
-    Path path;
-    if (servletContext.getResource(file) == null) {
-      // getRealPath() is not recommended. It returns null if the servlet container cannot
-      // translate the virtual path to a real path for any reason such as when the content is
-      // being made available from a .war archive.
-      path = new File(servletContext.getRealPath(file)).toPath();
-      Path parentDir = path.getParent();
-      // Files.write(..., StandardOpenOption.CREATE) can create a file, can't create a directory.
-      // need to check the directory
-      if (!Files.exists(parentDir)) {
-        Files.createDirectories(parentDir);
-      }
-      return path;
-    } else {
-      return new File(servletContext.getResource(file).toURI()).toPath();
-    }
-  }
-
   private Path generateSpMetaData()
       throws MalformedURLException, IOException, URISyntaxException, CertificateException {
-
     PrjSpConfig spConfig = getSpConfig();
     if (spConfig == null) {
       Log.error("can not got configuration of SP");
@@ -444,13 +409,78 @@ public class MetaDataGenerator {
     sb.append("</EntityDescriptor>\n");
 
     logger.info("The string is " + sb.toString());
+    Path path = fileSystemPathOf(SamlConfigureFile.SP, servletContext);
+    prepareDirectoryFor(path);
     return Files.write(
-        pathOf(SP),
+        path,
         sb.toString().getBytes(),
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING);
   }
 
+  private void prepareDirectoryFor(Path path) throws URISyntaxException, IOException {
+    Path parentDir = path.getParent();
+    // Files.write(..., StandardOpenOption.CREATE) can create a file, can't create a directory.
+    // need to check the directory
+    if (!Files.exists(parentDir)) {
+      Files.createDirectories(parentDir);
+    }
+  }
+
+  private static String getConfigureFile(SamlConfigureFile type) {
+    String idp = RESOURCE_IDP;
+    String xp = RESOURCE_SP;
+
+    if (isDockerRuningInPrjVm()) {
+      idp = PERSIST_IDP;
+      xp = PERSIST_SP;
+    }
+
+    switch (type) {
+      case IDP:
+        return idp;
+      case SP:
+        return xp;
+      default:
+        throw new RuntimeException("Unknow SAML configure file type");
+    }
+  }
+
+  private static Path fileSystemPathOf(SamlConfigureFile type, ServletContext servletContext)
+      throws URISyntaxException, IOException {
+    String conFile = getConfigureFile(type);
+    if (isDockerRuningInPrjVm()) {
+      return Paths.get(conFile);
+    }
+    if (servletContext.getResource(conFile) == null) {
+      // getRealPath() is not recommended. It returns null if the servlet container cannot
+      // translate the virtual path to a real path for any reason such as when the content is
+      // being made available from a .war archive.
+      return new File(servletContext.getRealPath(conFile)).toPath();
+    } else {
+      return new File(servletContext.getResource(conFile).toURI()).toPath();
+    }
+  }
+
+  public static boolean isExistingSAMLconfigOf(SamlConfigureFile type, ServletContext context)
+      throws URISyntaxException, IOException {
+    if (isDockerRuningInPrjVm()) {
+      return Files.exists(fileSystemPathOf(type, context));
+    }
+    return context.getResource(getConfigureFile(type)) != null;
+  }
+
+  public static InputStream getSAMLconfigAsStream(SamlConfigureFile type, ServletContext context)
+      throws IOException, URISyntaxException {
+    if (!isExistingSAMLconfigOf(type, context)) {
+      throw new RuntimeException(type.toString() + "does not exist");
+    }
+    if (isDockerRuningInPrjVm()) {
+      return Files.newInputStream(fileSystemPathOf(type, context), StandardOpenOption.READ);
+    }
+
+    return context.getResourceAsStream(getConfigureFile(type));
+  }
   /** The caller should check the status of return code */
   public int enableSAMLAuthenticationAndGenerateConfigureFiles() {
     try {
@@ -509,5 +539,43 @@ public class MetaDataGenerator {
       logger.error("getting collector list" + se);
     }
     return attributeValues;
+  }
+
+  /**
+   * <pre >
+   * Logic: PROJ only support one provider now.
+   * the value `SSO` of coustomerpmcdb.proj_sso_saml_profile.sso_enabled means it is remote not local
+   * authentication.
+   * when it is SAML there is one record in table
+   * coustomerpmcdb.proj_sso_saml_profile else there is not record.
+   * May 14, 2018.
+   */
+  public static boolean isSAMLEnabled() {
+    boolean isSAMLEnabled = false;
+    try (Statement stmt = PrjDBConnection.getInstance().getConnection().createStatement(); ) {
+      ResultSet rs = stmt.executeQuery("SELECT sso_enabled FROM coustomerpmcdb.pmc_service_provider;");
+
+      while (rs.next()) {
+        if (rs.getBoolean(1)) {
+          isSAMLEnabled = true;
+          break;
+        }
+      }
+      if (isSAMLEnabled) {
+        rs = stmt.executeQuery("SELECT count(sso_id) as size FROM coustomerpmcdb.proj_sso_saml_profile;");
+        while (rs.next()) {
+          return rs.getInt(1) != 0;
+        }
+      }
+
+      return false;
+    } catch (Exception e) {
+      logger.error("Failed to get authentication info of PROJ", e);
+      return false;
+    }
+  }
+
+  public boolean provideIdpLogoutServiceEndpointUrl() {
+    return StringUtils.isNotBlank(getIdpConfig().getSingleLogout());
   }
 }
